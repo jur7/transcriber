@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcriber</title>
+    <!-- Materialize CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <!-- Material Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="static/css/style.css">
+</head>
+<body>
+    <nav class="blue darken-2">
+        <div class="nav-wrapper container">
+            <a href="#" class="brand-logo">Transcriber</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="row">
+            <div class="col s12">
+                <div class="card">
+                    <div class="card-content">
+                        <span class="card-title">Upload Audio File</span>
+                        <div class="file-field input-field">
+                            <div class="btn">
+                                <span>File</span>
+                                <input type="file" id="audioFile">
+                            </div>
+                            <div class="file-path-wrapper">
+                                <input class="file-path validate" type="text">
+                            </div>
+                        </div>
+                        <div class="input-field">
+                            <select id="languageSelect">
+                                <option value="auto" selected>Automatic Detection</option>
+                                <option value="en">English</option>
+                                <option value="nl">Dutch</option>
+                                <option value="fr">French</option>
+                                <option value="es">Spanish</option>
+                            </select>
+                            <label>Language</label>
+                        </div>
+                        <button class="btn waves-effect waves-light" id="transcribeBtn">Transcribe
+                            <i class="material-icons right">send</i>
+                        </button>
+                        <div class="progress" style="display: none;">
+                            <div class="indeterminate"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col s12">
+                <ul class="collection with-header" id="transcriptionHistory">
+                    <li class="collection-header"><h4>Transcription History</h4></li>
+                    <!-- Transcriptions will be added here -->
+                </ul>
+                <button class="btn waves-effect waves-light red" id="clearAllBtn" style="display: none;">Clear All
+                    <i class="material-icons right">delete_forever</i>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Materialize JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script src="static/js/app.js"></script>
+</body>
+</html>
