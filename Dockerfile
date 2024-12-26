@@ -21,9 +21,6 @@ COPY ./backend /app/
 # Copy the frontend code into the container
 COPY ./app /app/app
 
-# Copy the .env file into the container
-COPY .env /app/
-
 # Expose the port the app runs on
 EXPOSE 5001
 

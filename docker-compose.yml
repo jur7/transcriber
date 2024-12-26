@@ -1,4 +1,5 @@
-# docker-compose.yml
+version: '3'
+
 services:
   transcriber:
     build:
@@ -8,6 +9,9 @@ services:
       - "5001:5001"
     volumes:
       - ./backend:/app/backend
-      - ./temp_uploads:/app/temp_uploads  # Mount the new temp_uploads directory
-    env_file:
-      - .env
+      - ./temp_uploads:/app/temp_uploads
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Madrid
+      - ASSEMBLYAI_API_KEY=d0969df61d2c41f1b573ad9d7b53145f # Replace with your actual key
+      - OPENAI_API_KEY=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   # Replace with your actual key
