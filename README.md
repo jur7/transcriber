@@ -199,7 +199,7 @@ git status
 ```bash
 git add .               # Add all changes
 # OR
-git add filename.py     # Add specific file
+git add filename.py    
 ```
 
 3. Commit changes:
