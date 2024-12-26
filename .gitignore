@@ -1,3 +1,19 @@
+# Virtual Environment
+venv/
+env/
+.env/
+.venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# DS_Store
+.DS_Store
+.DS_Store?
+._*
 .DS_Store
 .DS_Store?
 ._*
