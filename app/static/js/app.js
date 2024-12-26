@@ -82,23 +82,24 @@ function loadTranscriptions() {
 }
 
 function addTranscriptionToHistory(transcription) {
+    console.log("Adding transcription to history:", transcription);
     const date = new Date(transcription.recording_date);
     const formattedDate = `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
-    const languageMap = {
-        'en': 'English',
-        'nl': 'Dutch',
-        'fr': 'French',
-        'es': 'Spanish'
+    // Map API choice to a more user-friendly name
+    const apiNameMap = {
+        'assemblyai': 'AssemblyAI',
+        'openai': 'OpenAI Whisper'
     };
-    const languageName = languageMap[transcription.detected_language] || transcription.detected_language;
+    const apiName = apiNameMap[transcription.api_used] || transcription.api_used;
 
     var transcriptionItem = document.createElement('li');
     transcriptionItem.classList.add('collection-item');
+    transcriptionItem.dataset.fullText = transcription.transcription_text; // Store full text
 
     var contentDiv = document.createElement('div');
     contentDiv.innerHTML = `
-        <b>${transcription.filename}</b> - ${formattedDate} - ${languageName}
+        <b>${transcription.filename}</b> - ${formattedDate} - ${apiName}
         <div class="secondary-content">
             <button class="btn-flat waves-effect waves-light copy-btn" style="padding: 0 0.5rem;">
                 <i class="material-icons">content_copy</i>
@@ -116,8 +117,9 @@ function addTranscriptionToHistory(transcription) {
     transcriptionItem.appendChild(contentDiv);
 
     transcriptionItem.querySelector('.copy-btn').addEventListener('click', function() {
-        const text = transcriptionItem.querySelector('.transcription-text').textContent;
-        copyToClipboard(text);
+        const fullText = transcriptionItem.dataset.fullText; // Get full text from data attribute
+        console.log("Copying full text:", fullText);
+        copyToClipboard(fullText);
     });
 
     transcriptionItem.querySelector('.download-btn').addEventListener('click', function() {

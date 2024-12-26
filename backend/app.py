@@ -260,7 +260,8 @@ def transcribe_audio():
             'filename': audio_file.filename,
             'recording_date': datetime.now().isoformat(),
             'detected_language': detected_language,
-            'transcription_text': transcription_text
+            'transcription_text': transcription_text,
+            'api_used': api_choice  # Include API used in the response
         })
 
     except Exception as e:

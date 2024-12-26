@@ -17,12 +17,12 @@
 cd /Users/arnould/Documents/transcriber-project
 ```
 
-### 2. Build Image for Local Testing
+### 2. Build Image for Local Testing (I usually use: docker compose build)
 ```bash
 docker build -t transcriber-project-transcriber:latest .
 ```
 
-### 3. Run Container Locally
+### 3. Run Container Locally (I usually use docker compose up)
 ```bash
 docker run -d \
   --name transcriber-local \
