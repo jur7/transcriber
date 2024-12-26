@@ -1,3 +1,6 @@
 flask
 flask-cors
 assemblyai
+openai
+python-dotenv
+pydub

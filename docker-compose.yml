@@ -1,3 +1,4 @@
+# docker-compose.yml
 services:
   transcriber:
     build:
@@ -6,4 +7,7 @@ services:
     ports:
       - "5001:5001"
     volumes:
-      - ./transcriptions.db:/app/transcriptions.db
+      - ./backend:/app/backend
+      - ./temp_uploads:/app/temp_uploads  # Mount the new temp_uploads directory
+    env_file:
+      - .env

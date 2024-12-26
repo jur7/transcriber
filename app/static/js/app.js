@@ -7,13 +7,16 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('transcribeBtn').addEventListener('click', function() {
         var fileInput = document.getElementById('audioFile');
         var languageSelect = document.getElementById('languageSelect');
+        var apiSelect = document.getElementById('apiSelect');
         var file = fileInput.files[0];
         var languageCode = languageSelect.value;
+        var apiChoice = apiSelect.value;
 
         if (file) {
             var formData = new FormData();
             formData.append('audio_file', file);
             formData.append('language_code', languageCode);
+            formData.append('api_choice', apiChoice);
 
             document.querySelector('.progress').style.display = 'block';
 
@@ -48,7 +51,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(response => response.json())
             .then(data => {
                 M.toast({html: data.message});
-                document.getElementById('transcriptionHistory').innerHTML = '<li class="collection-header"><h4>Transcription History</h4></li>';
+                document.getElementById('transcriptionHistory').innerHTML = '';
                 document.getElementById('clearAllBtn').style.display = 'none';
             })
             .catch(error => {
@@ -63,6 +66,8 @@ function loadTranscriptions() {
     fetch('/api/transcriptions')
     .then(response => response.json())
     .then(transcriptions => {
+        transcriptions.reverse();
+
         if (transcriptions.length > 0) {
             transcriptions.forEach(transcription => {
                 addTranscriptionToHistory(transcription);
@@ -77,11 +82,9 @@ function loadTranscriptions() {
 }
 
 function addTranscriptionToHistory(transcription) {
-    // Format the date
     const date = new Date(transcription.recording_date);
     const formattedDate = `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
-    // Map language codes to full names
     const languageMap = {
         'en': 'English',
         'nl': 'Dutch',
@@ -92,25 +95,26 @@ function addTranscriptionToHistory(transcription) {
 
     var transcriptionItem = document.createElement('li');
     transcriptionItem.classList.add('collection-item');
-    transcriptionItem.innerHTML = `
-        <div>
-            <b>${transcription.filename}</b> - ${formattedDate} - ${languageName}
-            <div class="secondary-content">
-                <button class="btn-flat waves-effect waves-light copy-btn" style="padding: 0 0.5rem;">
-                    <i class="material-icons">content_copy</i>
-                </button>
-                <button class="btn-flat waves-effect waves-light download-btn" style="padding: 0 0.5rem;">
-                    <i class="material-icons">download</i>
-                </button>
-                <button class="btn-flat waves-effect waves-light delete-btn" style="padding: 0 0.5rem;">
-                    <i class="material-icons">delete</i>
-                </button>
-            </div>
-            <p class="transcription-text">${transcription.transcription_text}</p>
+
+    var contentDiv = document.createElement('div');
+    contentDiv.innerHTML = `
+        <b>${transcription.filename}</b> - ${formattedDate} - ${languageName}
+        <div class="secondary-content">
+            <button class="btn-flat waves-effect waves-light copy-btn" style="padding: 0 0.5rem;">
+                <i class="material-icons">content_copy</i>
+            </button>
+            <button class="btn-flat waves-effect waves-light download-btn" style="padding: 0 0.5rem;">
+                <i class="material-icons">download</i>
+            </button>
+            <button class="btn-flat waves-effect waves-light delete-btn" style="padding: 0 0.5rem;">
+                <i class="material-icons">delete</i>
+            </button>
         </div>
+        <p class="transcription-text"></p>
     `;
 
-    // Add event listeners
+    transcriptionItem.appendChild(contentDiv);
+
     transcriptionItem.querySelector('.copy-btn').addEventListener('click', function() {
         const text = transcriptionItem.querySelector('.transcription-text').textContent;
         copyToClipboard(text);
@@ -125,17 +129,42 @@ function addTranscriptionToHistory(transcription) {
         deleteTranscription(transcription.id, transcriptionItem);
     });
 
-    document.getElementById('transcriptionHistory').appendChild(transcriptionItem);
+    var transcriptionTextElement = contentDiv.querySelector('.transcription-text');
+    const words = transcription.transcription_text.split(/\s+/).filter(word => word.length > 0);
+
+    if (words.length > 140) {
+        const truncatedText = words.slice(0, 140).join(' ') + '...';
+        transcriptionTextElement.textContent = truncatedText;
+
+        var readMoreLink = document.createElement('a');
+        readMoreLink.href = '#!';
+        readMoreLink.classList.add('read-more');
+        readMoreLink.textContent = 'Read More';
+        contentDiv.appendChild(readMoreLink);
+
+        readMoreLink.addEventListener('click', function() {
+            if (transcriptionTextElement.textContent === truncatedText) {
+                transcriptionTextElement.textContent = transcription.transcription_text;
+                readMoreLink.textContent = 'Read Less';
+            } else {
+                transcriptionTextElement.textContent = truncatedText;
+                readMoreLink.textContent = 'Read More';
+            }
+        });
+    } else {
+        transcriptionTextElement.textContent = transcription.transcription_text;
+    }
+
+    var transcriptionHistoryList = document.getElementById('transcriptionHistory');
+    transcriptionHistoryList.insertBefore(transcriptionItem, transcriptionHistoryList.firstChild);
+
     document.getElementById('clearAllBtn').style.display = 'block';
 }
 
 function copyToClipboard(text) {
-    // Create a temporary textarea element
     const textarea = document.createElement('textarea');
     textarea.value = text;
     document.body.appendChild(textarea);
-    
-    // Select and copy the text
     textarea.select();
     try {
         document.execCommand('copy');
@@ -143,8 +172,6 @@ function copyToClipboard(text) {
     } catch (err) {
         M.toast({html: 'Failed to copy text'});
     }
-    
-    // Clean up
     document.body.removeChild(textarea);
 }
 
@@ -166,7 +193,7 @@ function deleteTranscription(transcriptionId, transcriptionItem) {
     .then(data => {
         M.toast({html: data.message});
         transcriptionItem.remove();
-        if (document.getElementById('transcriptionHistory').children.length <= 1) {
+        if (document.getElementById('transcriptionHistory').children.length === 0) {
             document.getElementById('clearAllBtn').style.display = 'none';
         }
     })
