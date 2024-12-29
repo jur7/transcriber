@@ -151,7 +151,7 @@ If you want to develop or test the application locally before deploying it with 
 
 -   **Port 5001 is in use:**  If port 5001 is already in use, you can change the port mapping in the  `docker-compose.yml`  file.
 -   **API Key Errors:**  Double-check that your API keys are correct and that your accounts with AssemblyAI and OpenAI are active.
--   **File Upload Issues:**  Ensure that the file you're uploading is a supported audio format.
+-   **File Upload Issues:**  Ensure that the file you're uploading is a supported audio format (mp3, mpga, m4a, wav and webm).
 -   **Docker Errors:**  If you encounter Docker errors, make sure Docker is running correctly and that you have sufficient permissions.
 
 ## Contributing
