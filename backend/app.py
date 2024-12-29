@@ -80,13 +80,15 @@ init_db()
 class BaseTranscriptionAPI:
     def __init__(self, api_key):
         self.api_key = api_key
+        logging.info(f"Initialized {self.__class__.__name__} with API key: {api_key}")
 
     def transcribe(self, audio_file_path, language_code):
+        logging.info(f"Starting transcription with {self.__class__.__name__} for file: {audio_file_path} and language code: {language_code}")
         raise NotImplementedError("Subclasses must implement the transcribe method")
 
 class AssemblyAITranscriptionAPI(BaseTranscriptionAPI):
     def transcribe(self, audio_file_path, language_code):
-        logging.info("Using AssemblyAI for transcription")
+        logging.info(f"Using AssemblyAI for transcription of {audio_file_path} with language code {language_code}")
         aai.settings.api_key = self.api_key
         if language_code == 'auto':
             config = aai.TranscriptionConfig(
@@ -97,12 +99,14 @@ class AssemblyAITranscriptionAPI(BaseTranscriptionAPI):
                 language_code=language_code
             )
         else:
+            logging.error(f"Invalid language code for AssemblyAI: {language_code}")
             raise ValueError("Invalid language code for AssemblyAI")
 
         transcriber = aai.Transcriber(config=config)
         transcript = transcriber.transcribe(audio_file_path)
 
         if transcript.status == aai.TranscriptStatus.error:
+            logging.error(f"AssemblyAI transcription failed: {transcript.error}")
             raise Exception(f"AssemblyAI transcription failed: {transcript.error}")
 
         detected_language = language_code
@@ -114,11 +118,12 @@ class AssemblyAITranscriptionAPI(BaseTranscriptionAPI):
             except AttributeError:
                 detected_language = 'en'
 
+        logging.info(f"AssemblyAI detected language: {detected_language}")
         return transcript.text, detected_language
 
 class OpenAITranscriptionAPI(BaseTranscriptionAPI):
     def transcribe(self, audio_file_path, language_code):
-        logging.info("Using OpenAI Whisper for transcription")
+        logging.info(f"Using OpenAI Whisper for transcription of {audio_file_path} with language code {language_code}")
         client = OpenAI(api_key=self.api_key)
 
         # Check if the file needs to be split
@@ -130,6 +135,7 @@ class OpenAITranscriptionAPI(BaseTranscriptionAPI):
             audio_file_path = os.path.abspath(audio_file_path)
 
             if not audio_file_path.startswith('/app/temp_uploads/'):
+                logging.error("Audio file path is not within the mounted volume")
                 raise ValueError("Audio file path is not within the mounted volume")
 
             audio_file = open(audio_file_path, "rb")
@@ -148,9 +154,11 @@ class OpenAITranscriptionAPI(BaseTranscriptionAPI):
                 )
                 detected_language = language_code
             else:
+                logging.error(f"Invalid language code for OpenAI Whisper: {language_code}")
                 raise ValueError("Invalid language code for OpenAI Whisper")
             transcription_text = transcript.text
 
+        logging.info(f"OpenAI detected language: {detected_language}")
         return transcription_text, detected_language
 
     def split_and_transcribe(self, audio_file_path, language_code):
@@ -186,6 +194,7 @@ class OpenAITranscriptionAPI(BaseTranscriptionAPI):
                     )
                     detected_language = language_code
                 else:
+                    logging.error(f"Invalid language code for OpenAI Whisper: {language_code}")
                     raise ValueError("Invalid language code for OpenAI Whisper")
                 transcription_texts.append(transcript.text)
 
@@ -202,6 +211,7 @@ def get_transcription_api(api_choice):
     elif api_choice == 'openai':
         return OpenAITranscriptionAPI(app.config['OPENAI_API_KEY'])
     else:
+        logging.error(f"Invalid API choice: {api_choice}")
         raise ValueError("Invalid API choice")
 
 # Serve Frontend
@@ -210,17 +220,17 @@ def index():
     template_path = app.template_folder
     full_path = os.path.join(template_path, 'index.html')
 
-    print("-" * 20)
-    print("Attempting to serve index.html")
-    print("Template folder:", template_path)
-    print("Full path to index.html:", full_path)
-    print("File exists:", os.path.exists(full_path))
-    print("-" * 20)
+    logging.info("-" * 20)
+    logging.info("Attempting to serve index.html")
+    logging.info(f"Template folder: {template_path}")
+    logging.info(f"Full path to index.html: {full_path}")
+    logging.info(f"File exists: {os.path.exists(full_path)}")
+    logging.info("-" * 20)
 
     try:
         return render_template('index.html', default_api=DEFAULT_API, default_language=DEFAULT_LANGUAGE)
     except NotFound:
-        print("Error: index.html not found in the specified directory.")
+        logging.error("Error: index.html not found in the specified directory.")
         return "Error: index.html not found", 404
 
 @app.route('/<path:path>')
@@ -232,6 +242,7 @@ def serve_static(path):
 def transcribe_audio():
     logging.info("Transcribe audio endpoint called")
     if 'audio_file' not in request.files:
+        logging.error("No audio file provided in the request")
         return jsonify({'error': 'No audio file provided'}), 400
 
     audio_file = request.files['audio_file']

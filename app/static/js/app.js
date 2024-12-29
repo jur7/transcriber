@@ -19,27 +19,39 @@ document.addEventListener('DOMContentLoaded', function() {
             formData.append('api_choice', apiChoice);
 
             document.querySelector('.progress').style.display = 'block';
+            // Disable the transcribe button to prevent multiple submissions
+            document.getElementById('transcribeBtn').disabled = true;
 
             fetch('/api/transcribe', {
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    // Handle HTTP errors (e.g., 404, 500)
+                    throw new Error('Network response was not ok: ' + response.statusText);
+                }
+                return response.json();
+            })
             .then(data => {
                 document.querySelector('.progress').style.display = 'none';
+                document.getElementById('transcribeBtn').disabled = false; // Re-enable the button
+
                 if (data.error) {
-                    M.toast({html: 'Error: ' + data.error});
+                    M.toast({html: 'Error: ' + data.error, classes: 'red'});
                 } else {
+                    M.toast({html: 'Transcription added!', classes: 'green'});
                     addTranscriptionToHistory(data);
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
                 document.querySelector('.progress').style.display = 'none';
-                M.toast({html: 'An error occurred during transcription.'});
+                document.getElementById('transcribeBtn').disabled = false; // Re-enable the button
+                M.toast({html: 'An error occurred during transcription: ' + error.message, classes: 'red'});
             });
         } else {
-            M.toast({html: 'Please select an audio file.'});
+            M.toast({html: 'Please select an audio file.', classes: 'red'});
         }
     });
 

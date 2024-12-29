@@ -5,7 +5,7 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Set the directory to clean up
+# Set the directory to clean up (consider making this configurable via environment variable)
 TEMP_UPLOADS_DIR = 'temp_uploads'
 
 # Set the threshold for file deletion (24 hours in seconds)
@@ -29,8 +29,10 @@ def delete_old_files(directory, threshold):
                 try:
                     os.remove(file_path)
                     logging.info(f"Deleted old file: {file_path}")
-                except Exception as e:
+                except OSError as e:
                     logging.error(f"Error deleting file {file_path}: {e}")
+                except Exception as e:
+                    logging.exception(f"Unexpected error deleting file {file_path}")
 
 if __name__ == "__main__":
     logging.info("Starting cleanup of old files...")
