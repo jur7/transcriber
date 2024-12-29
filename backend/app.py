@@ -1,4 +1,3 @@
-# backend/app.py
 import os
 import sqlite3
 import logging
@@ -6,7 +5,7 @@ from datetime import datetime
 import uuid
 import assemblyai as aai
 from openai import OpenAI
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, render_template
 from flask_cors import CORS
 from werkzeug.exceptions import NotFound
 from config import Config
@@ -37,6 +36,10 @@ TEMP_UPLOADS_DIR = 'temp_uploads'
 
 # Maximum file size for OpenAI Whisper (25MB in bytes)
 OPENAI_MAX_FILE_SIZE = 25 * 1024 * 1024
+
+# Get default API and language from environment variables
+DEFAULT_API = os.environ.get('DEFAULT_TRANSCRIBE_API', 'assemblyai')
+DEFAULT_LANGUAGE = os.environ.get('DEFAULT_LANGUAGE', 'auto')
 
 # Function to run the file cleanup task
 def cleanup_task():
@@ -215,7 +218,7 @@ def index():
     print("-" * 20)
 
     try:
-        return send_from_directory(app.template_folder, 'index.html')
+        return render_template('index.html', default_api=DEFAULT_API, default_language=DEFAULT_LANGUAGE)
     except NotFound:
         print("Error: index.html not found in the specified directory.")
         return "Error: index.html not found", 404
@@ -232,8 +235,8 @@ def transcribe_audio():
         return jsonify({'error': 'No audio file provided'}), 400
 
     audio_file = request.files['audio_file']
-    language_code = request.form.get('language_code')
-    api_choice = request.form.get('api_choice')
+    language_code = request.form.get('language_code', DEFAULT_LANGUAGE)
+    api_choice = request.form.get('api_choice', DEFAULT_API)
     logging.info(f"Received language code: {language_code}, API choice: {api_choice}")
 
     transcription_id = str(uuid.uuid4())

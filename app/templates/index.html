@@ -76,5 +76,25 @@
     <!-- Materialize JavaScript -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script src="static/js/app.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set default values for API and language based on environment variables
+            var defaultApi = "{{ default_api }}";
+            var defaultLanguage = "{{ default_language }}";
+    
+            var apiSelect = document.getElementById('apiSelect');
+            var languageSelect = document.getElementById('languageSelect');
+    
+            if (apiSelect) {
+                apiSelect.value = defaultApi;
+                M.FormSelect.init(apiSelect); // Reinitialize Materialize select
+            }
+    
+            if (languageSelect) {
+                languageSelect.value = defaultLanguage;
+                M.FormSelect.init(languageSelect); // Reinitialize Materialize select
+            }
+        });
+    </script>
 </body>
 </html>

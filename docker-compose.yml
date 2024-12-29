@@ -10,4 +10,7 @@ services:
       - ./temp_uploads:/app/temp_uploads  
     env_file:
       - .env
+    environment:
+      - DEFAULT_TRANSCRIBE_API=openai  # Set your desired default API here ("assemblyai" or "openai")
+      - DEFAULT_LANGUAGE=auto  # Set your desired default language here ("en", "nl", "fr", "es", or "auto")
     restart: unless-stopped
