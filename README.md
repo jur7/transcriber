@@ -10,6 +10,7 @@ This project is an audio transcription application with a user-friendly web inte
 -   **Transcription History:** Stores and displays a history of your transcriptions.
 -   **Docker Deployment:** Easy deployment using Docker Compose.
 -   **File Cleanup:** Automatically deletes old temporary files to prevent storage issues.
+-   **Large File Handling:**  Handles audio files larger than 25MB (OpenAI Whisper's API limit) by splitting them into chunks for transcription.
 
 ## Prerequisites
 
@@ -151,7 +152,7 @@ If you want to develop or test the application locally before deploying it with 
 
 -   **Port 5001 is in use:**  If port 5001 is already in use, you can change the port mapping in the  `docker-compose.yml`  file.
 -   **API Key Errors:**  Double-check that your API keys are correct and that your accounts with AssemblyAI and OpenAI are active.
--   **File Upload Issues:**  Ensure that the file you're uploading is a supported audio format and that it's not too large (especially for OpenAI Whisper, which has a 25MB limit).
+-   **File Upload Issues:**  Ensure that the file you're uploading is a supported audio format.
 -   **Docker Errors:**  If you encounter Docker errors, make sure Docker is running correctly and that you have sufficient permissions.
 
 ## Contributing
