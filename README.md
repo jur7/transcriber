@@ -1,5 +1,3 @@
-
-```markdown
 # Audio Transcriber
 
 This project is an audio transcription application with a user-friendly web interface. It allows you to upload audio files and get transcriptions using either AssemblyAI or OpenAI's Whisper API.
