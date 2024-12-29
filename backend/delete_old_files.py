@@ -1,4 +1,3 @@
-# backend/delete_old_files.py
 import os
 import time
 import logging
