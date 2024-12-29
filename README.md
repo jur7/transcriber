@@ -4,7 +4,7 @@ This project is an audio transcription application with a user-friendly web inte
 
 ## Features
 
--   **Web Interface:** A clean and intuitive interface built with HTML, CSS (Materialize CSS), and JavaScript.
+-   **Web Interface:** A clean and intuitive interface built with HTML, CSS and JavaScript.
 -   **Multiple Transcription APIs:** Supports both AssemblyAI and OpenAI Whisper for transcription.
 -   **Language Selection:** You can choose the language of the audio or use automatic language detection.
 -   **Transcription History:** Stores and displays a history of your transcriptions.
