@@ -8,9 +8,8 @@ This project is an audio transcription application with a user-friendly web inte
 -   **Multiple Transcription APIs:** Supports both AssemblyAI and OpenAI Whisper for transcription.
 -   **Language Selection:** You can choose the language of the audio or use automatic language detection.
 -   **Transcription History:** Stores and displays a history of your transcriptions.
--   **Docker Deployment:** Easy deployment using Docker Compose.
--   **File Cleanup:** Automatically deletes old temporary files to prevent storage issues.
 -   **Large File Handling:**  Handles audio files larger than 25MB (OpenAI Whisper's API limit) by splitting them into chunks for transcription.
+-   **Docker Deployment:** Easy deployment using Docker Compose.
 
 ## Prerequisites
 
@@ -28,7 +27,7 @@ The application uses the following environment variables:
 | `ASSEMBLYAI_API_KEY`    | Your API key for AssemblyAI.                                                                           | Your AssemblyAI API key                                  | *None (required)* |
 | `OPENAI_API_KEY`        | Your API key for OpenAI Whisper.                                                                        | Your OpenAI API key                                     | *None (required)* |
 | `DEFAULT_TRANSCRIBE_API` | The default transcription API to use when the application loads.                                      | `assemblyai` or `openai`                                 | `assemblyai`   |
-| `DEFAULT_LANGUAGE`      | The default language to use for transcription when the application loads (if applicable to the API). | `auto`, `en`, `nl`, `fr`, `es`                           | `auto`        |
+| `DEFAULT_LANGUAGE`      | The default language to use for transcription when the application loads. | `auto`, `en`, `nl`, `fr`, `es`                           | `auto`        |
 
 ## Installation and Deployment with Docker
 
@@ -162,4 +161,3 @@ If you'd like to contribute to this project, please feel free to submit pull req
 ## License
 
 This project is licensed under the MIT License.
-```
