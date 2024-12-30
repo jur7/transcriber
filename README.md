@@ -80,10 +80,10 @@ If you want to customize the application or develop it further, you can use Dock
 
 1. Open a terminal.
 2. Navigate to the directory where you want to store the project.
-3. Clone this repository (replace with your repository URL):
+3. Clone this repository:
 
     ```bash
-    git clone [Your-Repository-URL]
+    git clone https://github.com/arnoulddw/transcriber
     cd [Your-Project-Name]
     ```
 
