@@ -11,6 +11,8 @@ This project is an audio transcription application with a user-friendly web inte
 -   **Large File Handling:**  Handles audio files larger than 25MB (OpenAI Whisper's API limit) by splitting them into chunks for transcription.
 -   **Docker Deployment:** Easy deployment using Docker Compose.
 
+![Screenshot of the Transcriber App](Transcriber-screenshot.png)
+
 ## Usage
 
 1. **Upload Audio File:**  Click the "File" button to select an audio file from your computer.
