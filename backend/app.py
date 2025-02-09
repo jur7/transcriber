@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import sqlite3
 import logging
@@ -12,6 +13,7 @@ from openai import OpenAI
 from flask import Flask, request, jsonify, send_from_directory, render_template
 from flask_cors import CORS
 from werkzeug.exceptions import NotFound
+from werkzeug.utils import secure_filename
 from config import Config
 from dotenv import load_dotenv
 from pydub import AudioSegment
@@ -24,7 +26,13 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Initialize Flask
+# Allowed file extensions for audio uploads
+ALLOWED_EXTENSIONS = {'mp3', 'm4a', 'wav', 'ogg', 'webm'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Initialize Flask with CORS
 app = Flask(__name__, static_folder='app/static', template_folder='app/templates')
 CORS(app)
 
@@ -32,37 +40,34 @@ CORS(app)
 config = Config()
 app.config.from_object(config)
 
-# Database setup (you already set DATABASE in config.py)
+# Database path and temporary upload directory
 DATABASE = app.config['DATABASE']
-
-# Temporary uploads directory
 TEMP_UPLOADS_DIR = 'temp_uploads'
-
-# Maximum file size for OpenAI Whisper (25MB in bytes)
-OPENAI_MAX_FILE_SIZE = 25 * 1024 * 1024
+OPENAI_MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
 
 # Get default API and language from environment variables
 DEFAULT_API = os.environ.get('DEFAULT_TRANSCRIBE_API', 'assemblyai')
 DEFAULT_LANGUAGE = os.environ.get('DEFAULT_LANGUAGE', 'auto')
 
+# Limit the number of concurrent jobs (for security and performance)
+MAX_ACTIVE_JOBS = 10
+
 ###########################################################################
 # Global “jobs” dictionary for asynchronous transcription progress tracking
-# (Each job will include a progress list, a finished flag, and a result object)
+# Each job holds a progress list, a finish flag, and a result.
 ###########################################################################
 jobs = {}
 jobs_lock = threading.Lock()
 
 def append_progress(job_id, message):
-    """Helper function to add a progress message for the given job."""
     with jobs_lock:
         if job_id in jobs:
             jobs[job_id]['progress'].append(message)
-    # Also write to the usual log output.
     logging.info(message)
 
 ###########################################################################
-# Function to run the transcription in a background thread.
-# This function uses our progress_callback (which just calls append_progress)
+# Background transcription worker function. It processes a transcription,
+# updates job progress, and writes the final data to the database.
 ###########################################################################
 def process_transcription(job_id, temp_filename, language_code, api_choice, original_filename):
     try:
@@ -73,10 +78,10 @@ def process_transcription(job_id, temp_filename, language_code, api_choice, orig
         api = get_transcription_api(api_choice)
         progress_callback = lambda msg: append_progress(job_id, msg)
         
-        # Call the transcribe function (it will call our progress_callback at key steps)
+        # Perform the transcription (this may run for several minutes)
         transcription_text, detected_language = api.transcribe(temp_filename, language_code, progress_callback=progress_callback)
         
-        # Save the final transcription data in the database
+        # Save result in the database
         conn = get_db_connection()
         recording_date = datetime.now().isoformat()
         conn.execute('''
@@ -108,7 +113,7 @@ def process_transcription(job_id, temp_filename, language_code, api_choice, orig
             os.remove(temp_filename)
 
 ###########################################################################
-# Database connection helper functions
+# Database Helper Functions
 ###########################################################################
 def get_db_connection():
     conn = sqlite3.connect(DATABASE)
@@ -134,7 +139,7 @@ def init_db():
 init_db()
 
 ###########################################################################
-# Transcription API classes with progress_callback support
+# Transcription API Classes with Progress Reporting
 ###########################################################################
 class BaseTranscriptionAPI:
     def __init__(self, api_key):
@@ -193,7 +198,8 @@ class OpenAITranscriptionAPI(BaseTranscriptionAPI):
             return self.split_and_transcribe(audio_file_path, language_code, progress_callback)
         else:
             audio_file_path = os.path.abspath(audio_file_path)
-            if not audio_file_path.startswith('/app/temp_uploads/'):
+            # Ensure file is within TEMP_UPLOADS_DIR; adjust check per your deployment
+            if not audio_file_path.startswith(os.path.join(os.getcwd(), TEMP_UPLOADS_DIR)):
                 logging.error("Audio file path is not within the mounted volume")
                 raise ValueError("Audio file path is not within the mounted volume")
             with open(audio_file_path, "rb") as audio_file:
@@ -223,7 +229,6 @@ class OpenAITranscriptionAPI(BaseTranscriptionAPI):
         chunk_length = 10 * 60 * 1000  # 10 minutes in milliseconds
         chunks = []
         transcription_texts = []
-        # Create chunks every 10 minutes
         for i in range(0, total_length, chunk_length):
             chunk = audio[i:i + chunk_length]
             chunk_filename = os.path.join(TEMP_UPLOADS_DIR, f"{os.path.splitext(os.path.basename(audio_file_path))[0]}_chunk_{i // chunk_length}.mp3")
@@ -253,7 +258,6 @@ class OpenAITranscriptionAPI(BaseTranscriptionAPI):
                     logging.error(f"Invalid language code for OpenAI Whisper: {language_code}")
                     raise ValueError("Invalid language code for OpenAI Whisper")
                 transcription_texts.append(transcript.text)
-        # Clean up temporary chunk files
         for chunk_path in chunks:
             if os.path.exists(chunk_path):
                 os.remove(chunk_path)
@@ -269,7 +273,7 @@ def get_transcription_api(api_choice):
         raise ValueError("Invalid API choice")
 
 ###########################################################################
-# Serve Frontend
+# Serve the Frontend
 ###########################################################################
 @app.route('/')
 def index():
@@ -301,33 +305,40 @@ def transcribe_audio():
         logging.error("No audio file provided in the request")
         return jsonify({'error': 'No audio file provided'}), 400
 
-    audio_file = request.files['audio_file']
-    language_code = request.form.get('language_code', DEFAULT_LANGUAGE)
-    api_choice = request.form.get('api_choice', DEFAULT_API)
-    logging.info(f"Received language code: {language_code}, API choice: {api_choice}")
+    file = request.files['audio_file']
+    if file.filename == '':
+        logging.error("No selected file")
+        return jsonify({'error': 'No selected file'}), 400
 
-    # Create a job id and save file to temp_uploads
+    if not allowed_file(file.filename):
+        logging.error("File extension not allowed")
+        return jsonify({'error': 'File type not allowed'}), 400
+
+    # Enforce maximum number of active jobs to protect resources
+    with jobs_lock:
+        active_jobs = sum(1 for job in jobs.values() if not job.get('finished', False))
+        if active_jobs >= MAX_ACTIVE_JOBS:
+            return jsonify({'error': 'Too many concurrent transcription jobs. Please try again later.'}), 429
+
+    original_filename = secure_filename(file.filename)
     job_id = str(uuid.uuid4())
-    temp_filename = os.path.join(TEMP_UPLOADS_DIR, f"{job_id}_{audio_file.filename}")
-    audio_file.save(temp_filename)
+    temp_filename = os.path.join(TEMP_UPLOADS_DIR, f"{job_id}_{original_filename}")
+    file.save(temp_filename)
 
-    # Create a new job record in our global jobs dict.
     with jobs_lock:
         jobs[job_id] = {'progress': [], 'finished': False, 'result': None}
 
     # Run transcription in a background thread.
-    thread = threading.Thread(target=process_transcription, args=(job_id, temp_filename, language_code, api_choice, audio_file.filename))
+    thread = threading.Thread(target=process_transcription, args=(job_id, temp_filename, request.form.get('language_code', DEFAULT_LANGUAGE), request.form.get('api_choice', DEFAULT_API), original_filename))
     thread.start()
 
     return jsonify({'job_id': job_id, 'message': 'Transcription started'})
 
-# New endpoint for progress – the frontend will poll this URL.
 @app.route('/api/progress/<job_id>', methods=['GET'])
 def get_progress(job_id):
     with jobs_lock:
         if job_id not in jobs:
             return jsonify({'error': 'Job not found'}), 404
-        # Make a shallow copy for safety.
         job_info = jobs[job_id].copy()
     return jsonify(job_info)
 
@@ -357,12 +368,14 @@ def clear_transcriptions():
     conn.close()
     return jsonify({'message': 'All transcriptions cleared'})
 
-# Background cleanup task (runs continuously)
+###########################################################################
+# Background Cleanup Task to Delete Old Files
+###########################################################################
 def cleanup_task():
     while True:
         logging.info("Running cleanup task...")
         delete_old_files(TEMP_UPLOADS_DIR, DELETE_THRESHOLD)
-        time.sleep(21600)  # Wait for 6 hours
+        time.sleep(21600)  # Every 6 hours
 
 cleanup_thread = threading.Thread(target=cleanup_task)
 cleanup_thread.daemon = True

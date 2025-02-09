@@ -122,7 +122,7 @@ function addTranscriptionToHistory(transcription) {
   const apiName = apiNameMap[transcription.api_used] || transcription.api_used;
   var transcriptionItem = document.createElement('li');
   transcriptionItem.classList.add('collection-item');
-  // Store the full transcript in a data attribute so that download uses the entire text
+  // Store the full transcript so downloads use the complete text
   transcriptionItem.dataset.fullText = transcription.transcription_text;
   var contentDiv = document.createElement('div');
   contentDiv.innerHTML = `
@@ -146,8 +146,7 @@ function addTranscriptionToHistory(transcription) {
       console.log("Copying full text:", fullText);
       copyToClipboard(fullText);
   });
-  // Updated download event handler: Use full transcript from data attribute,
-  // not just the visible (possibly truncated) text.
+  // Use full transcript from the data attribute for downloads.
   transcriptionItem.querySelector('.download-btn').addEventListener('click', function() {
       const text = transcriptionItem.dataset.fullText;
       downloadTranscription(text, transcription.filename);
@@ -222,7 +221,6 @@ function deleteTranscription(transcriptionId, transcriptionItem) {
   });
 }
 
-// Polling for progress updates and updating our progress card.
 function pollProgress(jobId) {
   var interval = setInterval(function() {
       fetch('/api/progress/' + jobId)
