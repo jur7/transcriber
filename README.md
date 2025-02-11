@@ -114,7 +114,7 @@ If you want to customize the application or develop it further, you can use Dock
 
 **Step 3: Build and Run with Docker Compose**
 
-1. In the project's root directory, run the following command:
+In the project's root directory, run the following command:
 
     ```bash
     docker-compose up -d --build
@@ -124,7 +124,7 @@ If you want to customize the application or develop it further, you can use Dock
 
 ### Step 4: Access the Application
 
-1. Open your web browser and go to:
+Open your web browser and go to:
 
     ```
     http://localhost:5001
@@ -155,7 +155,7 @@ If you want to develop or test the application locally before deploying it with 
 
 ### Step 2: Install Dependencies
 
-1. Install the required Python packages:
+Install the required Python packages:
 
     ```bash
     pip install -r backend/requirements.txt
