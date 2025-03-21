@@ -1,3 +1,5 @@
+<!-- README.md -->
+
 # Audio Transcriber
 
 Audio Transcriber is an audio transcription application with a user-friendly web interface. It allows you to upload audio files and get transcriptions using one of three supported APIs:
@@ -40,13 +42,13 @@ The application automatically handles large files by splitting them into managea
 
 The application relies on several environment variables. You can specify these in your `.env` file or directly in your Docker Compose file.
 
-| Variable                   | Description                                                                                           | Accepted Values                         | Default             |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------- |
-| `TZ`                       | The timezone for the application.                                                                     | Any valid timezone string               | `UTC`               |
-| `ASSEMBLYAI_API_KEY`       | Your API key for AssemblyAI.                                                                          | Your AssemblyAI API key                 | *None (required)*   |
-| `OPENAI_API_KEY`           | Your API key for OpenAI (used for both Whisper and GPT 4o Transcribe).                                | Your OpenAI API key                     | *None (required)*   |
-| `DEFAULT_TRANSCRIBE_API`   | The default transcription API used when the application loads. Options: `assemblyai`, `openai`, `gpt4o`| `assemblyai`, `openai`, or `gpt4o`        | `gpt4o`             |
-| `DEFAULT_LANGUAGE`         | The default language for transcription on startup.                                                  | `auto`, `en`, `nl`, `fr`, `es`            | `auto`              |
+| Variable                 | Description                                                                                           | Accepted Values                         | Default   |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------- | --------- |
+| `TZ`                     | The timezone for the application.                                                                   | Any valid timezone string               | `UTC`     |
+| `ASSEMBLYAI_API_KEY`     | Your API key for AssemblyAI.                                                                          | Your AssemblyAI API key                 | (none)    |
+| `OPENAI_API_KEY`         | Your API key for OpenAI (used for both Whisper and GPT 4o Transcribe).                                | Your OpenAI API key                     | (none)    |
+| `DEFAULT_TRANSCRIBE_API` | The default transcription API used when the application loads. Options: `assemblyai`, `whisper`, `gpt4o` | `assemblyai`, `whisper`, or `gpt4o`        | `gpt4o`   |
+| `DEFAULT_LANGUAGE`       | The default language for transcription on startup.                                                  | `auto`, `en`, `nl`, `fr`, `es`            | `auto`    |
 
 ## Installation and Deployment
 

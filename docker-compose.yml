@@ -1,3 +1,5 @@
+# docker-compose.yml 
+
 services:
   transcriber:
     build:
@@ -6,11 +8,12 @@ services:
     ports:
       - "5001:5001"
     volumes:
-      - ./backend:/app/backend
-      - ./temp_uploads:/app/temp_uploads  
+      - ./app:/app/app
+      - ./uploads:/app/uploads
+      - ./database:/app/database
     env_file:
       - .env
     environment:
-      - DEFAULT_TRANSCRIBE_API=gpt4o  # Set your desired default API here ("assemblyai" or "openai")
-      - DEFAULT_LANGUAGE=auto # Set your desired default language here ("en", "nl", "fr", "es", or "auto")
+      - DEFAULT_TRANSCRIBE_API=gpt4o
+      - DEFAULT_LANGUAGE=auto
     restart: unless-stopped

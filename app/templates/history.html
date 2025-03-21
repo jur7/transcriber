@@ -1,0 +1,13 @@
+<!-- app/templates/history.html -->
+
+{% extends "base.html" %}
+{% block title %}Transcription History{% endblock %}
+{% block content %}
+<h4>Transcription History</h4>
+<ul class="collection with-header" id="transcriptionHistory">
+  <!-- Transcription items will be loaded here -->
+</ul>
+<button class="btn waves-effect waves-light red" id="clearAllBtn" style="display: none;">
+  Clear All <i class="material-icons right">delete_forever</i>
+</button>
+{% endblock %}

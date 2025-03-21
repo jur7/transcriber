@@ -1,3 +1,5 @@
+/* app/static/css/main.css */
+
 body {
     display: flex;
     min-height: 100vh;
@@ -28,11 +30,11 @@ nav {
 }
 
 .btn {
-    background-color: #1976d2 !important; /* Blue */
+    background-color: #1976d2 !important;
 }
 
 .btn:hover {
-    background-color: #1565c0 !important; /* Darker Blue */
+    background-color: #1565c0 !important;
 }
 
 .file-field .btn {
