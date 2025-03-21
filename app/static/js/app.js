@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Mapping for friendly API and language names
   var apiNameMap = {
+    'gpt4o': 'OpenAI GPT 4o Transcribe',
     'assemblyai': 'AssemblyAI',
     'openai': 'OpenAI Whisper'
   };
@@ -116,6 +117,7 @@ function addTranscriptionToHistory(transcription) {
   const date = new Date(transcription.recording_date);
   const formattedDate = `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth()+1).padStart(2, '0')}-${date.getFullYear()}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   const apiNameMap = {
+      'gpt4o': 'OpenAI GPT 4o Transcribe',
       'assemblyai': 'AssemblyAI',
       'openai': 'OpenAI Whisper'
   };
@@ -146,7 +148,6 @@ function addTranscriptionToHistory(transcription) {
       console.log("Copying full text:", fullText);
       copyToClipboard(fullText);
   });
-  // Use full transcript from the data attribute for downloads.
   transcriptionItem.querySelector('.download-btn').addEventListener('click', function() {
       const text = transcriptionItem.dataset.fullText;
       downloadTranscription(text, transcription.filename);

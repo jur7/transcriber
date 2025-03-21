@@ -33,7 +33,9 @@
               </div>
               <div class="input-field">
                 <select id="apiSelect">
-                  <option value="assemblyai" selected>AssemblyAI</option>
+                  <!-- New API option added. The default_api variable injected from Flask will select the correct option -->
+                  <option value="gpt4o">OpenAI GPT 4o Transcribe</option>
+                  <option value="assemblyai">AssemblyAI</option>
                   <option value="openai">OpenAI Whisper</option>
                 </select>
                 <label>Transcription API</label>
