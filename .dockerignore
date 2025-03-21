@@ -1,1 +1,33 @@
+#.dockerignore
+ 
+# Exclude Python cache files
+__pycache__
+*.py[cod]
+*$py.class
+ 
+# Exclude virtual environment folders
+venv/
+env/
+.venv/
+ENV/
 
+# Exclude source control files
+.git
+.gitignore
+
+# Exclude environment files
+.env
+
+# Exclude OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Exclude dynamic directories (uploads and transcriptions are not included in the Docker build)
+uploads/
+transcriptions/
+database/*.db
