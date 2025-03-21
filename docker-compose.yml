@@ -14,6 +14,6 @@ services:
     env_file:
       - .env
     environment:
-      - DEFAULT_TRANSCRIBE_API=gpt4o
-      - DEFAULT_LANGUAGE=auto
+      - DEFAULT_TRANSCRIBE_API=gpt4o # Set your desired default API here ("assemblyai", "gpt4o" or "whisper")
+      - DEFAULT_LANGUAGE=auto # Set your desired default language here ("en", "nl", "fr", "es", or "auto")
     restart: unless-stopped
