@@ -6,7 +6,7 @@ Transcriber is an audio transcription application with a user-friendly web inter
 
 - **AssemblyAI**  
 - **OpenAI Whisper**  
-- **OpenAI GPT 4o Transcribe** (new default)
+- **OpenAI GPT4o Transcribe** (new default)
 
 The application automatically handles large files by splitting them into manageable chunks.
 
