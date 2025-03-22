@@ -109,8 +109,8 @@ For further customization or local development, use Docker Compose.
          - TZ=${TZ:-UTC}
          - ASSEMBLYAI_API_KEY=your_assemblyai_api_key
          - OPENAI_API_KEY=your_openai_api_key
-         - DEFAULT_TRANSCRIBE_API=${DEFAULT_TRANSCRIBE_API:-gpt4o}
-         - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-auto}
+         - DEFAULT_TRANSCRIBE_API=${DEFAULT_TRANSCRIBE_API:gpt4o}
+         - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:auto}
        restart: unless-stopped
    ```
 
