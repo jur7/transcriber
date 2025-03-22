@@ -47,7 +47,7 @@ The application relies on several environment variables. You can specify these i
 | `TZ`                     | The timezone for the application.                                                                   | Any valid timezone string               | `UTC`     |
 | `ASSEMBLYAI_API_KEY`     | Your API key for AssemblyAI.                                                                          | Your AssemblyAI API key                 | (none)    |
 | `OPENAI_API_KEY`         | Your API key for OpenAI (used for both Whisper and GPT 4o Transcribe).                                | Your OpenAI API key                     | (none)    |
-| `DEFAULT_TRANSCRIBE_API` | The default transcription API used when the application loads. Options: `assemblyai`, `whisper`, `gpt4o` | `assemblyai`, `whisper` or `gpt4o`        | `gpt4o`   |
+| `DEFAULT_TRANSCRIBE_API` | The default transcription API used when the application loads. | `assemblyai`, `whisper` or `gpt4o`        | `gpt4o`   |
 | `DEFAULT_LANGUAGE`       | The default language for transcription on startup.                                                  | `auto`, `en`, `nl`, `fr`, `es`            | `auto`    |
 
 ## Installation and Deployment
