@@ -16,6 +16,10 @@ app = Flask(__name__,
             static_folder=os.path.join(os.getcwd(), 'app', 'static'))
 app.config.from_object(Config)
 
+# Set Werkzeug (the Flask development server logger) to WARNING to suppress routine access logs.
+from logging import getLogger
+getLogger('werkzeug').setLevel(logging.WARNING)
+
 # Initialize the database inside an application context.
 with app.app_context():
     from app.models import transcription
@@ -41,7 +45,6 @@ from app.services.file_service import cleanup_old_files
 def run_cleanup_task():
     while True:
         logging.info("Running cleanup task...")
-        # Use the DELETE_THRESHOLD (in seconds) from config.
         cleanup_old_files(app.config['TEMP_UPLOADS_DIR'], app.config.get('DELETE_THRESHOLD', 24*60*60))
         time.sleep(21600)  # Run every 6 hours
 

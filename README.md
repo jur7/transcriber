@@ -1,8 +1,8 @@
 <!-- README.md -->
 
-# Audio Transcriber
+# Transcriber
 
-Audio Transcriber is an audio transcription application with a user-friendly web interface. It allows you to upload audio files and get transcriptions using one of three supported APIs:
+Transcriber is an audio transcription application with a user-friendly web interface. It allows you to upload audio files and get transcriptions using one of three supported APIs:
 
 - **AssemblyAI**  
 - **OpenAI Whisper**  

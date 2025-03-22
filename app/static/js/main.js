@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
   
     // Mapping for friendly API and language names
     var apiNameMap = {
-      'gpt4o': 'OpenAI GPT 4o Transcribe',
+      'gpt4o': 'OpenAI GPT4o Transcribe',
       'assemblyai': 'AssemblyAI',
       'whisper': 'OpenAI Whisper'
     };
@@ -118,7 +118,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const date = new Date(transcription.recording_date);
     const formattedDate = `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
     const apiNameMap = {
-        'gpt4o': 'OpenAI GPT 4o Transcribe',
+        'gpt4o': 'OpenAI GPT4o Transcribe',
         'assemblyai': 'AssemblyAI',
         'whisper': 'OpenAI Whisper'
     };
