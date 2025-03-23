@@ -45,11 +45,12 @@ def transcribe_audio():
 
     language_code = request.form.get('language_code', Config.DEFAULT_LANGUAGE)
     api_choice = request.form.get('api_choice', Config.DEFAULT_API)
+    context_prompt = request.form.get('context_prompt', '')  # New field for OpenAI context prompt
 
     # Start a background thread to process this transcription.
     thread = threading.Thread(
         target=transcription_service.process_transcription,
-        args=(job_id, temp_filename, language_code, api_choice, original_filename)
+        args=(job_id, temp_filename, language_code, api_choice, original_filename, context_prompt)
     )
     thread.start()
     return jsonify({'job_id': job_id, 'message': 'Transcription started'})

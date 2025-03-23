@@ -1,84 +1,119 @@
 <!-- app/templates/index.html -->
 
-{% extends "base.html" %}
-{% block title %}Transcriber{% endblock %}
-{% block content %}
-<div class="row">
-  <div class="col s12">
-    <div class="card">
-      <div class="card-content">
-        <span class="card-title">Upload Audio File</span>
-        <div class="file-field input-field">
-          <div class="btn">
-            <span>File</span>
-            <input type="file" id="audioFile">
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcriber</title>
+    <!-- Materialize CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <!-- Material Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  </head>
+  <body>
+    <nav class="blue darken-2">
+      <div class="nav-wrapper container">
+        <a href="#" class="brand-logo">Transcriber</a>
+      </div>
+    </nav>
+    <main class="container">
+      <div class="row">
+        <div class="col s12">
+          <div class="card">
+            <div class="card-content">
+              <span class="card-title">Upload Audio File</span>
+              <div class="file-field input-field">
+                <div class="btn">
+                  <span>File</span>
+                  <input type="file" id="audioFile">
+                </div>
+                <div class="file-path-wrapper">
+                  <input class="file-path validate" type="text">
+                </div>
+              </div>
+              <div class="input-field">
+                <select id="apiSelect">
+                  <option value="gpt4o">OpenAI GPT4o Transcribe</option>
+                  <option value="assemblyai">AssemblyAI</option>
+                  <option value="whisper">OpenAI Whisper</option>
+                </select>
+                <label>Transcription API</label>
+              </div>
+              <div class="input-field">
+                <select id="languageSelect">
+                  <option value="auto" selected>Automatic Detection</option>
+                  <option value="en">English</option>
+                  <option value="nl">Dutch</option>
+                  <option value="fr">French</option>
+                  <option value="es">Spanish</option>
+                </select>
+                <label>Language</label>
+              </div>
+              
+              <!-- Context Prompt Input (only for OpenAI APIs) -->
+              <div id="contextPromptContainer" class="input-field" style="display: none;">
+                <label for="contextPrompt">Context prompt</label>
+                <textarea id="contextPrompt" class="materialize-textarea" placeholder="Enter context prompt for OpenAI model..." oninput="validateContextPrompt()"></textarea>
+                <span id="contextPromptError" class="helper-text"></span>
+              </div>
+              
+              <button class="btn waves-effect waves-light" id="transcribeBtn">
+                Transcribe <i class="material-icons right">send</i>
+              </button>
+              <div class="progress" style="display: none;">
+                <div class="indeterminate"></div>
+              </div>
+              <div id="progressContainer" class="card-panel teal lighten-5" style="display: none; margin-top: 10px;">
+                <h5 class="teal-text text-darken-4">Transcription Status</h5>
+                <p><strong>File:</strong> <span id="progressFile"></span></p>
+                <p><strong>Service:</strong> <span id="progressService"></span></p>
+                <p><strong>Language:</strong> <span id="progressLanguage"></span></p>
+                <hr>
+                <p><strong>Current Activity:</strong></p>
+                <p id="progressActivity"><i class="material-icons">hourglass_empty</i> Waiting...</p>
+              </div>
+            </div>
           </div>
-          <div class="file-path-wrapper">
-            <input class="file-path validate" type="text">
-          </div>
-        </div>
-        <div class="input-field">
-          <select id="apiSelect">
-            <option value="gpt4o">OpenAI GPT4o Transcribe</option>
-            <option value="assemblyai">AssemblyAI</option>
-            <option value="whisper">OpenAI Whisper</option>
-          </select>
-          <label>Transcription API</label>
-        </div>
-        <div class="input-field">
-          <select id="languageSelect">
-            <option value="auto" selected>Automatic Detection</option>
-            <option value="en">English</option>
-            <option value="nl">Dutch</option>
-            <option value="fr">French</option>
-            <option value="es">Spanish</option>
-          </select>
-          <label>Language</label>
-        </div>
-        <button class="btn waves-effect waves-light" id="transcribeBtn">
-          Transcribe <i class="material-icons right">send</i>
-        </button>
-        <div class="progress" style="display: none;">
-          <div class="indeterminate"></div>
-        </div>
-        <div id="progressContainer" class="card-panel teal lighten-5" style="display: none; margin-top: 10px;">
-          <h5 class="teal-text text-darken-4">Transcription Status</h5>
-          <p><strong>File:</strong> <span id="progressFile"></span></p>
-          <p><strong>Service:</strong> <span id="progressService"></span></p>
-          <p><strong>Language:</strong> <span id="progressLanguage"></span></p>
-          <hr>
-          <p><strong>Current Activity:</strong></p>
-          <p id="progressActivity"><i class="material-icons">hourglass_empty</i> Waiting...</p>
         </div>
       </div>
-    </div>
-  </div>
-</div>
-<div class="row">
-  <div class="col s12">
-    <span class="card-title">Transcription History</span>
-    <ul class="collection with-header" id="transcriptionHistory">
-      <!-- Transcriptions will be added here by JavaScript -->
-    </ul>
-    <button class="btn waves-effect waves-light red" id="clearAllBtn" style="display: none;">
-      Clear All <i class="material-icons right">delete_forever</i>
-    </button>
-  </div>
-</div>
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-      var defaultApi = "{{ default_api }}";
-      var defaultLanguage = "{{ default_language }}";
-      var apiSelect = document.getElementById('apiSelect');
-      var languageSelect = document.getElementById('languageSelect');
-      if (apiSelect) {
-          apiSelect.value = defaultApi;
-          M.FormSelect.init(apiSelect);
-      }
-      if (languageSelect) {
-          languageSelect.value = defaultLanguage;
-          M.FormSelect.init(languageSelect);
-      }
-  });
-</script>
-{% endblock %}
+      
+      <!-- Transcription History Section -->
+      <div class="row">
+        <div class="col s12">
+          <span class="card-title">Transcription History</span>
+          <ul class="collection with-header" id="transcriptionHistory">
+            <!-- Transcriptions will be added here by JavaScript -->
+          </ul>
+          <button class="btn waves-effect waves-light red" id="clearAllBtn" style="display: none;">
+            Clear All <i class="material-icons right">delete_forever</i>
+          </button>
+        </div>
+      </div>
+    </main>
+    <!-- Materialize & Custom Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+      // On load, set default values and trigger a change event so that the context prompt appears if needed.
+      document.addEventListener('DOMContentLoaded', function() {
+          var defaultApi = "{{ default_api }}";
+          var defaultLanguage = "{{ default_language }}";
+          var apiSelect = document.getElementById('apiSelect');
+          var languageSelect = document.getElementById('languageSelect');
+          if (apiSelect) {
+              apiSelect.value = defaultApi;
+              M.FormSelect.init(apiSelect);
+          }
+          if (languageSelect) {
+              languageSelect.value = defaultLanguage;
+              M.FormSelect.init(languageSelect);
+          }
+          // Dispatch a change event to ensure the context prompt is displayed if the default is an OpenAI API.
+          var event = new Event('change');
+          apiSelect.dispatchEvent(event);
+      });
+    </script>
+  </body>
+</html>

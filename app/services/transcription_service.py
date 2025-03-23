@@ -50,7 +50,7 @@ def get_transcription_api(api_choice: str) -> Any:
         raise ValueError(message)
 
 def process_transcription(job_id: str, temp_filename: str, language_code: str,
-                          api_choice: str, original_filename: str) -> None:
+                          api_choice: str, original_filename: str, context_prompt: str = "") -> None:
     """
     Background worker that performs the transcription.
     This function is wrapped inside an application context so that
@@ -61,14 +61,18 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
         try:
             append_progress(job_id, "Transcription started.")
             append_progress(job_id, f"Received language code: {language_code}, API choice: {api_choice}")
+            append_progress(job_id, f"API call parameters: File: {temp_filename}, Language: {language_code}, Context Prompt: {context_prompt}")
 
             api = get_transcription_api(api_choice)
             progress_callback = lambda msg: append_progress(job_id, msg)
 
             # Perform the transcription.
-            transcription_text, detected_language = api.transcribe(temp_filename, language_code,
-                                                                   progress_callback=progress_callback)
-
+            # Pass context_prompt only if the API is gpt4o.
+            if api_choice == 'gpt4o':
+                transcription_text, detected_language = api.transcribe(temp_filename, language_code, progress_callback=progress_callback, context_prompt=context_prompt)
+            else:
+                transcription_text, detected_language = api.transcribe(temp_filename, language_code, progress_callback=progress_callback)
+            
             recording_date = datetime.now().isoformat()
             transcription_data = {
                 'id': job_id,

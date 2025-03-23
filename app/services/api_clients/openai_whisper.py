@@ -16,7 +16,8 @@ class OpenAITranscriptionAPI:
         logging.info("Initialized OpenAITranscriptionAPI (Whisper).")
 
     def transcribe(self, audio_file_path: str, language_code: str,
-                   progress_callback: Optional[Callable[[str], None]] = None) -> Tuple[str, str]:
+                   progress_callback: Optional[Callable[[str], None]] = None,
+                   context_prompt: str = "") -> Tuple[str, str]:
         if progress_callback:
             progress_callback(f"Transcribing file {audio_file_path} with OpenAI Whisper, language {language_code}")
         else:
@@ -28,7 +29,7 @@ class OpenAITranscriptionAPI:
                     progress_callback("File too large – splitting into chunks.")
                 else:
                     logging.info("File too large – splitting into chunks.")
-                return self.split_and_transcribe(audio_file_path, language_code, progress_callback)
+                return self.split_and_transcribe(audio_file_path, language_code, progress_callback, context_prompt=context_prompt)
             else:
                 abs_path = os.path.abspath(audio_file_path)
                 temp_dir = os.path.dirname(audio_file_path)
@@ -36,16 +37,20 @@ class OpenAITranscriptionAPI:
                     raise ValueError("Audio file path is not allowed.")
                 with open(abs_path, "rb") as audio_file:
                     if language_code == 'auto':
-                        transcript = client.audio.transcriptions.create(
-                            model="whisper-1",
-                            file=audio_file
-                        )
-                        detected_language = 'en'
-                    elif language_code in ['en', 'nl', 'fr', 'es']:
+                        logging.info(f"API Call Parameters: model=whisper-1, language=auto, prompt={context_prompt}")
                         transcript = client.audio.transcriptions.create(
                             model="whisper-1",
                             file=audio_file,
-                            language=language_code
+                            prompt=context_prompt
+                        )
+                        detected_language = 'en'
+                    elif language_code in ['en', 'nl', 'fr', 'es']:
+                        logging.info(f"API Call Parameters: model=whisper-1, language={language_code}, prompt={context_prompt}")
+                        transcript = client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_file,
+                            language=language_code,
+                            prompt=context_prompt
                         )
                         detected_language = language_code
                     else:
@@ -66,7 +71,8 @@ class OpenAITranscriptionAPI:
         return transcription_text, detected_language
 
     def split_and_transcribe(self, audio_file_path: str, language_code: str,
-                             progress_callback: Optional[Callable[[str], None]] = None) -> Tuple[str, str]:
+                             progress_callback: Optional[Callable[[str], None]] = None,
+                             context_prompt: str = "") -> Tuple[str, str]:
         if progress_callback:
             progress_callback(f"Splitting file {audio_file_path}")
         else:
@@ -84,16 +90,20 @@ class OpenAITranscriptionAPI:
             try:
                 with open(chunk_path, "rb") as audio_file:
                     if language_code == 'auto':
-                        transcript = client.audio.transcriptions.create(
-                            model="whisper-1",
-                            file=audio_file
-                        )
-                        detected_language = 'en'
-                    elif language_code in ['en', 'nl', 'fr', 'es']:
+                        logging.info(f"API Call Parameters (chunk): model=whisper-1, language=auto, prompt={context_prompt}")
                         transcript = client.audio.transcriptions.create(
                             model="whisper-1",
                             file=audio_file,
-                            language=language_code
+                            prompt=context_prompt
+                        )
+                        detected_language = 'en'
+                    elif language_code in ['en', 'nl', 'fr', 'es']:
+                        logging.info(f"API Call Parameters (chunk): model=whisper-1, language={language_code}, prompt={context_prompt}")
+                        transcript = client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_file,
+                            language=language_code,
+                            prompt=context_prompt
                         )
                         detected_language = language_code
                     else:
