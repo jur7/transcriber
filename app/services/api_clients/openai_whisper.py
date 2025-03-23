@@ -38,19 +38,21 @@ class OpenAITranscriptionAPI:
                     raise ValueError("Audio file path is not allowed.")
                 with open(abs_path, "rb") as audio_file:
                     if language_code == 'auto':
-                        logging.info(f"API Call Parameters: model=whisper-1, language=auto, prompt={context_prompt}")
+                        logging.info(f"API Call Parameters: model=whisper-1, language=auto, response_format=text, prompt={context_prompt}")
                         transcript = client.audio.transcriptions.create(
                             model="whisper-1",
                             file=audio_file,
+                            response_format="text",
                             prompt=context_prompt
                         )
                         detected_language = 'en'
                     elif language_code in Config.SUPPORTED_LANGUAGE_CODES:
-                        logging.info(f"API Call Parameters: model=whisper-1, language={language_code}, prompt={context_prompt}")
+                        logging.info(f"API Call Parameters: model=whisper-1, language={language_code}, response_format=text, prompt={context_prompt}")
                         transcript = client.audio.transcriptions.create(
                             model="whisper-1",
                             file=audio_file,
                             language=language_code,
+                            response_format="text",
                             prompt=context_prompt
                         )
                         detected_language = language_code
@@ -60,7 +62,7 @@ class OpenAITranscriptionAPI:
                             progress_callback(msg)
                         logging.error(msg)
                         raise ValueError(msg)
-                transcription_text = transcript.text
+                transcription_text = transcript if isinstance(transcript, str) else transcript.text
         except Exception as e:
             error_msg = f"Error transcribing file with OpenAI Whisper: {e}"
             if progress_callback:
@@ -92,20 +94,22 @@ class OpenAITranscriptionAPI:
             try:
                 with open(chunk_path, "rb") as audio_file:
                     if language_code == 'auto':
-                        logging.info(f"API Call Parameters (chunk): model=whisper-1, language=auto, prompt={context_prompt}")
+                        logging.info(f"API Call Parameters (chunk): model=whisper-1, language=auto, response_format=text, prompt={context_prompt}")
                         transcript = client.audio.transcriptions.create(
                             model="whisper-1",
                             file=audio_file,
+                            response_format="text",
                             prompt=context_prompt
                         )
                         if not detected_language:
                             detected_language = 'en'
                     elif language_code in Config.SUPPORTED_LANGUAGE_CODES:
-                        logging.info(f"API Call Parameters (chunk): model=whisper-1, language={language_code}, prompt={context_prompt}")
+                        logging.info(f"API Call Parameters (chunk): model=whisper-1, language={language_code}, response_format=text, prompt={context_prompt}")
                         transcript = client.audio.transcriptions.create(
                             model="whisper-1",
                             file=audio_file,
                             language=language_code,
+                            response_format="text",
                             prompt=context_prompt
                         )
                         detected_language = language_code
@@ -115,7 +119,7 @@ class OpenAITranscriptionAPI:
                             progress_callback(msg)
                         logging.error(msg)
                         raise ValueError(msg)
-                transcription_text = transcript.text
+                transcription_text = transcript if isinstance(transcript, str) else transcript.text
             except Exception as e:
                 error_msg = f"Error transcribing chunk {idx+1} with OpenAI Whisper: {e}"
                 if progress_callback:

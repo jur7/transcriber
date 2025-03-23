@@ -42,6 +42,11 @@ def get_transcription_api(api_choice: str) -> Any:
 
 def process_transcription(job_id: str, temp_filename: str, language_code: str,
                           api_choice: str, original_filename: str, context_prompt: str = "") -> None:
+    """
+    Main entry point for handling audio transcription in the background.
+    Splits large files if necessary, calls the appropriate transcription API,
+    and stores the result in the database.
+    """
     with app.app_context():
         try:
             append_progress(job_id, "Transcription started.")
@@ -51,15 +56,21 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
             api = get_transcription_api(api_choice)
             progress_callback = lambda msg: append_progress(job_id, msg)
 
-            if api_choice == 'gpt4o':
+            # Pass context_prompt to whisper or gpt4o, skip for assemblyAI
+            if api_choice in ('gpt4o', 'whisper'):
                 transcription_text, detected_language = api.transcribe(
-                    temp_filename, language_code, progress_callback=progress_callback, context_prompt=context_prompt
+                    temp_filename,
+                    language_code,
+                    progress_callback=progress_callback,
+                    context_prompt=context_prompt
                 )
             else:
                 transcription_text, detected_language = api.transcribe(
-                    temp_filename, language_code, progress_callback=progress_callback
+                    temp_filename,
+                    language_code,
+                    progress_callback=progress_callback
                 )
-            
+
             transcription_data = {
                 'id': job_id,
                 'filename': original_filename,
