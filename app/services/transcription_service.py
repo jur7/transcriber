@@ -52,9 +52,13 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
             progress_callback = lambda msg: append_progress(job_id, msg)
 
             if api_choice == 'gpt4o':
-                transcription_text, detected_language = api.transcribe(temp_filename, language_code, progress_callback=progress_callback, context_prompt=context_prompt)
+                transcription_text, detected_language = api.transcribe(
+                    temp_filename, language_code, progress_callback=progress_callback, context_prompt=context_prompt
+                )
             else:
-                transcription_text, detected_language = api.transcribe(temp_filename, language_code, progress_callback=progress_callback)
+                transcription_text, detected_language = api.transcribe(
+                    temp_filename, language_code, progress_callback=progress_callback
+                )
             
             transcription_data = {
                 'id': job_id,
@@ -62,7 +66,8 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
                 'detected_language': detected_language,
                 'transcription_text': transcription_text,
                 'api_used': api_choice,
-                'created_at': datetime.now().isoformat()
+                # Store a valid ISO format date string (without microseconds) so JavaScript can parse it.
+                'created_at': datetime.now().replace(microsecond=0).isoformat()
             }
             transcription.insert_transcription(transcription_data)
             append_progress(job_id, "Transcription successful.")
