@@ -6,16 +6,15 @@ import time
 from typing import Tuple, Optional, Callable
 from openai import OpenAI
 from app.services import file_service
+from app.config import Config
 
 class OpenAIGPT4oTranscriptionAPI:
     """
-    Integration with OpenAI GPT 4o Transcribe using synchronous requests.
-    When a file is split (because it exceeds the 25MB limit), each chunk is 
-    transcribed independently (without any context) and then the individual 
-    transcripts are aggregated.
+    Integration with OpenAI GPT4o Transcribe using synchronous requests.
+    When a file is too large (above 25 MB) it is automatically split,
+    each chunk is transcribed independently, and then the transcripts are aggregated.
     """
     def __init__(self, api_key: str) -> None:
-        # Avoid logging the actual API key.
         self.api_key = api_key
         logging.info("Initialized OpenAIGPT4oTranscriptionAPI.")
 
@@ -75,12 +74,11 @@ class OpenAIGPT4oTranscriptionAPI:
                 progress_callback(f"Transcribing chunk {idx+1}/{total_chunks}")
             else:
                 logging.debug(f"Transcribing chunk {idx+1}/{total_chunks}")
-            # Pass the language_code down to the helper function.
             chunk_text = self._transcribe_chunk(client, chunk_path, idx, total_chunks, language_code, progress_callback, context_prompt=context_prompt)
             transcription_texts.append(chunk_text)
         file_service.remove_files(chunk_files)
-        detected_language = language_code if language_code != 'auto' else 'en'
         full_transcription = " ".join(transcription_texts)
+        detected_language = language_code if language_code != 'auto' else 'en'
         logging.info("Transcription aggregated successfully.")
         return full_transcription, detected_language
 
@@ -121,4 +119,3 @@ class OpenAIGPT4oTranscriptionAPI:
                 progress_callback(final_error)
             logging.error(final_error)
         return transcript_text
-

@@ -6,6 +6,7 @@ import time
 from typing import Tuple, Optional, Callable
 from openai import OpenAI
 from app.services import file_service
+from app.config import Config
 
 class OpenAITranscriptionAPI:
     """
@@ -44,7 +45,7 @@ class OpenAITranscriptionAPI:
                             prompt=context_prompt
                         )
                         detected_language = 'en'
-                    elif language_code in ['en', 'nl', 'fr', 'es']:
+                    elif language_code in Config.SUPPORTED_LANGUAGE_CODES:
                         logging.info(f"API Call Parameters: model=whisper-1, language={language_code}, prompt={context_prompt}")
                         transcript = client.audio.transcriptions.create(
                             model="whisper-1",
@@ -82,6 +83,7 @@ class OpenAITranscriptionAPI:
         client = OpenAI(api_key=self.api_key)
         transcription_texts = []
         total_chunks = len(chunk_files)
+        detected_language = None
         for idx, chunk_path in enumerate(chunk_files):
             if progress_callback:
                 progress_callback(f"Transcribing chunk {idx+1}/{total_chunks}")
@@ -96,8 +98,9 @@ class OpenAITranscriptionAPI:
                             file=audio_file,
                             prompt=context_prompt
                         )
-                        detected_language = 'en'
-                    elif language_code in ['en', 'nl', 'fr', 'es']:
+                        if not detected_language:
+                            detected_language = 'en'
+                    elif language_code in Config.SUPPORTED_LANGUAGE_CODES:
                         logging.info(f"API Call Parameters (chunk): model=whisper-1, language={language_code}, prompt={context_prompt}")
                         transcript = client.audio.transcriptions.create(
                             model="whisper-1",
@@ -122,5 +125,7 @@ class OpenAITranscriptionAPI:
             transcription_texts.append(transcription_text)
         file_service.remove_files(chunk_files)
         full_transcription = " ".join(transcription_texts)
+        if language_code == 'auto' and not detected_language:
+            detected_language = 'en'
         logging.info("Transcription aggregated successfully.")
         return full_transcription, detected_language

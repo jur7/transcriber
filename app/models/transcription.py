@@ -20,7 +20,6 @@ def init_db():
         CREATE TABLE IF NOT EXISTS transcriptions (
             id TEXT PRIMARY KEY,
             filename TEXT,
-            recording_date TEXT,
             detected_language TEXT,
             transcription_text TEXT,
             api_used TEXT,
@@ -36,13 +35,12 @@ def insert_transcription(transcription_data):
     conn = get_db_connection()
     conn.execute(
         '''
-        INSERT INTO transcriptions (id, filename, recording_date, detected_language, transcription_text, api_used, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO transcriptions (id, filename, detected_language, transcription_text, api_used, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         ''',
         (
             transcription_data['id'],
             transcription_data['filename'],
-            transcription_data['recording_date'],
             transcription_data['detected_language'],
             transcription_data['transcription_text'],
             transcription_data['api_used'],

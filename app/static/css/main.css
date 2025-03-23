@@ -68,7 +68,6 @@ nav {
     border-bottom: 1px solid #e0e0e0;
 }
 
-/* Material form styles */
 .input-field input[type=text]:focus {
     border-bottom: 1px solid #1976d2 !important;
     box-shadow: 0 1px 0 0 #1976d2 !important;
@@ -78,13 +77,11 @@ nav {
     color: #1976d2 !important;
 }
 
-/* Dropdown styles */
 .dropdown-content li > a, 
 .dropdown-content li > span {
     color: #1976d2 !important;
 }
 
-/* Action buttons */
 .btn-floating {
     background-color: #1976d2 !important;
 }
@@ -93,7 +90,6 @@ nav {
     background-color: #e53935 !important;
 }
 
-/* Select dropdown styles */
 .select-wrapper input.select-dropdown:focus {
     border-bottom: 1px solid #1976d2 !important;
 }
@@ -102,13 +98,11 @@ nav {
     fill: #1976d2 !important;
 }
 
-/* Card title styling */
 .card-title {
     color: #1976d2 !important;
     font-weight: 500 !important;
 }
 
-/* Transcription item styling */
 .transcription-item {
     padding: 15px !important;
 }
@@ -129,12 +123,10 @@ nav {
     line-height: 1.6;
 }
 
-/* Action icons */
 .material-icons {
     vertical-align: middle;
 }
 
-/* Responsive adjustments */
 @media only screen and (max-width: 992px) {
     .brand-logo {
         left: 50%;

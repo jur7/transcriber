@@ -3,6 +3,7 @@
 import logging
 from typing import Tuple, Optional, Callable
 import assemblyai as aai
+from app.config import Config
 
 class AssemblyAITranscriptionAPI:
     """
@@ -22,7 +23,7 @@ class AssemblyAITranscriptionAPI:
         try:
             if language_code == 'auto':
                 config_obj = aai.TranscriptionConfig(language_detection=True)
-            elif language_code in ['en', 'nl', 'fr', 'es']:
+            elif language_code in Config.SUPPORTED_LANGUAGE_CODES:
                 config_obj = aai.TranscriptionConfig(language_code=language_code)
             else:
                 msg = f"Invalid language code for AssemblyAI: {language_code}"
@@ -47,8 +48,10 @@ class AssemblyAITranscriptionAPI:
         detected_language = language_code
         if language_code == 'auto':
             try:
-                detected_language = getattr(transcript, 'detected_language_code', None) or getattr(transcript, 'language_code', 'en')
-            except AttributeError:
+                detected_language = getattr(transcript, 'detected_language_code', None) or getattr(transcript, 'language_code', None)
+                if not detected_language:
+                    detected_language = 'en'
+            except Exception:
                 detected_language = 'en'
         if progress_callback:
             progress_callback(f"AssemblyAI transcription completed. Detected language: {detected_language}")

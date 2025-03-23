@@ -11,6 +11,14 @@
     <!-- Material Icons -->
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    <!-- Render supported languages as JSON into a hidden script tag -->
+    <script id="supportedLanguages" type="application/json">
+      {{ supported_languages|tojson|safe }}
+    </script>
+    <script>
+      // Parse the JSON string into a JavaScript object
+      var SUPPORTED_LANGUAGE_MAP = JSON.parse(document.getElementById("supportedLanguages").textContent);
+    </script>
   </head>
   <body>
     <nav class="blue darken-2">
@@ -43,11 +51,9 @@
               </div>
               <div class="input-field">
                 <select id="languageSelect">
-                  <option value="auto" selected>Automatic Detection</option>
-                  <option value="en">English</option>
-                  <option value="nl">Dutch</option>
-                  <option value="fr">French</option>
-                  <option value="es">Spanish</option>
+                  {% for code, name in supported_languages.items() %}
+                    <option value="{{ code }}" {% if code == default_language %}selected{% endif %}>{{ name }}</option>
+                  {% endfor %}
                 </select>
                 <label>Language</label>
               </div>
@@ -55,7 +61,7 @@
               <!-- Context Prompt Input (only for OpenAI APIs) -->
               <div id="contextPromptContainer" class="input-field" style="display: none;">
                 <label for="contextPrompt">Context prompt</label>
-                <textarea id="contextPrompt" class="materialize-textarea" placeholder="Enter context prompt for OpenAI model..." oninput="validateContextPrompt()"></textarea>
+                <textarea id="contextPrompt" class="materialize-textarea" placeholder="Enter context prompt..." oninput="validateContextPrompt()"></textarea>
                 <span id="contextPromptError" class="helper-text"></span>
               </div>
               
@@ -84,7 +90,6 @@
         <div class="col s12">
           <span class="card-title">Transcription History</span>
           <ul class="collection with-header" id="transcriptionHistory">
-            <!-- Transcriptions will be added here by JavaScript -->
           </ul>
           <button class="btn waves-effect waves-light red" id="clearAllBtn" style="display: none;">
             Clear All <i class="material-icons right">delete_forever</i>
@@ -96,7 +101,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
-      // On load, set default values and trigger a change event so that the context prompt appears if needed.
       document.addEventListener('DOMContentLoaded', function() {
           var defaultApi = "{{ default_api }}";
           var defaultLanguage = "{{ default_language }}";
@@ -110,7 +114,6 @@
               languageSelect.value = defaultLanguage;
               M.FormSelect.init(languageSelect);
           }
-          // Dispatch a change event to ensure the context prompt is displayed if the default is an OpenAI API.
           var event = new Event('change');
           apiSelect.dispatchEvent(event);
       });

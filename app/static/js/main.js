@@ -1,27 +1,16 @@
 /* app/static/js/main.js */
 
 document.addEventListener('DOMContentLoaded', function() {
-  // Initialize Materialize selects
   var elems = document.querySelectorAll('select');
   M.FormSelect.init(elems);
   loadTranscriptions();
 
-  // Mapping for friendly API and language names
   var apiNameMap = {
     'gpt4o': 'OpenAI GPT4o Transcribe',
     'assemblyai': 'AssemblyAI',
     'whisper': 'OpenAI Whisper'
   };
-  var languageNameMap = {
-    'auto': 'Auto-detect',
-    'en': 'English',
-    'nl': 'Dutch',
-    'fr': 'French',
-    'es': 'Spanish'
-  };
 
-  // Toggle Context Prompt field based on API selection.
-  // Now, the context prompt field will appear if the selected API is either "gpt4o" or "whisper".
   var apiSelect = document.getElementById('apiSelect');
   var contextPromptContainer = document.getElementById('contextPromptContainer');
   apiSelect.addEventListener('change', function() {
@@ -40,10 +29,9 @@ document.addEventListener('DOMContentLoaded', function() {
     var languageCode = languageSelect.value;
     var apiChoice = apiSelect.value;
     if (file) {
-      // Set the status card fields
       document.getElementById('progressFile').textContent = file.name;
       document.getElementById('progressService').textContent = apiNameMap[apiChoice] || apiChoice;
-      document.getElementById('progressLanguage').textContent = languageNameMap[languageCode] || languageCode;
+      document.getElementById('progressLanguage').textContent = (typeof SUPPORTED_LANGUAGE_MAP !== 'undefined' ? SUPPORTED_LANGUAGE_MAP[languageCode] : languageCode) || languageCode;
       document.getElementById('progressActivity').innerHTML =
         '<i class="material-icons">hourglass_empty</i> Starting...';
 
@@ -52,7 +40,6 @@ document.addEventListener('DOMContentLoaded', function() {
       formData.append('language_code', languageCode);
       formData.append('api_choice', apiChoice);
       
-      // If an OpenAI model is chosen (either GPT4o or Whisper), include the context prompt.
       if (apiChoice === 'gpt4o' || apiChoice === 'whisper') {
           var contextPrompt = document.getElementById('contextPrompt').value;
           var words = contextPrompt.match(/\S+/g) || [];
@@ -63,11 +50,9 @@ document.addEventListener('DOMContentLoaded', function() {
           formData.append('context_prompt', contextPrompt);
       }
 
-      // Show the progress bar and disable the transcribe button
       document.querySelector('.progress').style.display = 'block';
       document.getElementById('transcribeBtn').disabled = true;
       
-      // Show the progress status card
       document.getElementById('progressContainer').style.display = 'block';
 
       fetch('/api/transcribe', {
@@ -86,7 +71,6 @@ document.addEventListener('DOMContentLoaded', function() {
           document.querySelector('.progress').style.display = 'none';
           document.getElementById('transcribeBtn').disabled = false;
         } else {
-          // Start polling progress using the returned job_id
           pollProgress(data.job_id);
         }
       })
@@ -125,9 +109,7 @@ function validateContextPrompt() {
   if (words.length > 120) {
       errorSpan.textContent = "Context prompt exceeds 120 word limit. Please shorten your prompt.";
       errorSpan.style.color = "red";
-      // Add the "invalid" class to cause the field's underline to turn red.
       contextField.classList.add("invalid");
-      // Optionally trim to the first 120 words.
       contextField.value = words.slice(0, 120).join(' ');
   } else {
       errorSpan.textContent = "";
@@ -155,7 +137,7 @@ function loadTranscriptions() {
 
 function addTranscriptionToHistory(transcription) {
   console.log("Adding transcription to history:", transcription);
-  const date = new Date(transcription.recording_date);
+  const date = new Date(transcription.created_at);
   const formattedDate = `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   const apiNameMap = {
       'gpt4o': 'OpenAI GPT4o Transcribe',
@@ -165,7 +147,6 @@ function addTranscriptionToHistory(transcription) {
   const apiName = apiNameMap[transcription.api_used] || transcription.api_used;
   var transcriptionItem = document.createElement('li');
   transcriptionItem.classList.add('collection-item');
-  // Store the full transcript for downloads
   transcriptionItem.dataset.fullText = transcription.transcription_text;
   var contentDiv = document.createElement('div');
   contentDiv.innerHTML = `
@@ -289,7 +270,6 @@ function pollProgress(jobId) {
               document.querySelector('.progress').style.display = 'none';
               if (jobData.result && !jobData.result.error) {
                   M.toast({html: 'Transcription completed!', classes: 'green'});
-                  // Clear context prompt if present
                   var contextField = document.getElementById('contextPrompt');
                   if (contextField) {
                       contextField.value = "";
