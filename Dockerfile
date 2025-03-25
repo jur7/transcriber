@@ -4,7 +4,6 @@
 FROM python:3.9-slim-buster
 
 # Set environment variables for Python
-# Corrected syntax: KEY=VALUE
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
@@ -23,9 +22,7 @@ COPY ./requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the entire application code into the container.
-# Ensure .dockerignore is properly set up to exclude unnecessary files/dirs.
 COPY ./app /app/app
-# REMOVED: COPY ./.env /app/.env  <- This line was causing the error and is not needed with docker-compose env_file
 
 # Create necessary directories if they are managed within the container
 # If using volumes (like in docker-compose), these might not be strictly needed here

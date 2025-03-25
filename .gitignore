@@ -35,7 +35,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Dynamic or generated content (prevent from being committed)
+# Dynamic or generated content
 database/*.db
 uploads/
 transcriptions/

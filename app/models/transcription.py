@@ -64,15 +64,6 @@ def init_db_command():
         )
         logging.info("[DB] 'transcriptions' table verified/created.")
 
-        # --- REMOVED REDUNDANT ALTER TABLE BLOCK ---
-        # The columns 'status', 'progress_log', and 'error_message' are already
-        # included in the CREATE TABLE IF NOT EXISTS statement above.
-        # Attempting to add them again with ALTER TABLE caused the
-        # "duplicate column name" error, especially with multiple workers.
-        # For future schema changes (migrations), a more robust system
-        # (like Alembic or manual version tracking) should be used.
-        # --- END REMOVED BLOCK ---
-
         conn.commit()
         conn.close()
         logging.info("[DB] Database schema verification/initialization complete.")
