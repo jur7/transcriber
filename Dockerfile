@@ -24,9 +24,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the entire application code into the container.
 COPY ./app /app/app
 
-# Create necessary directories if they are managed within the container
-# If using volumes (like in docker-compose), these might not be strictly needed here
-RUN mkdir -p /app/uploads /app/database
+# REMOVED: Create necessary directories if they are managed within the container
+# RUN mkdir -p /app/uploads /app/database
+# These directories will be created/managed by the volume mounts in docker-compose.yml
 
 # Expose the port Gunicorn will run on.
 EXPOSE 5001
