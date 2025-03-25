@@ -1,8 +1,9 @@
 # requirements.txt
 
 flask
-flask-cors
+# flask-cors # Removed as it wasn't used
 assemblyai
 openai
 python-dotenv
 pydub
+gunicorn # Added for production WSGI server

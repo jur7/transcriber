@@ -4,94 +4,189 @@ import os
 import uuid
 import threading
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Optional, Any
 from flask import current_app
-from app import app
+from app import app # Import the app instance
 
-from app.models import transcription
+# Use the new DB functions for status/progress
+from app.models import transcription as transcription_model
 from app.services import file_service
 
 from app.services.api_clients.assemblyai import AssemblyAITranscriptionAPI
 from app.services.api_clients.openai_whisper import OpenAITranscriptionAPI
 from app.services.api_clients.openai_gpt4o import OpenAIGPT4oTranscriptionAPI
 
-# Maximum file size for OpenAI APIs (25MB)
-OPENAI_MAX_FILE_SIZE = 25 * 1024 * 1024
+# Import specific API errors if available (example for OpenAI)
+from openai import OpenAIError
 
-jobs = {}
-jobs_lock = threading.Lock()
+# --- Helper Function for Progress Update ---
 
-def append_progress(job_id: str, message: str) -> None:
-    with jobs_lock:
-        if job_id in jobs:
-            jobs[job_id]['progress'].append(message)
-    logging.info(f"Job {job_id}: {message}")
+def _update_progress(job_id: str, message: str, is_error: bool = False) -> None:
+    """Formats, logs (console), and saves (DB) a progress message for a job."""
+    short_job_id = job_id[:8]
+    log_level = logging.ERROR if is_error else logging.INFO
+    # Format message with prefix for CONSOLE logging
+    log_message_console = f"[JOB:{short_job_id}] {message}"
+
+    # Log to console/file (using the structured message)
+    logging.log(log_level, log_message_console)
+
+    try:
+        # Update database log (needs app context)
+        with app.app_context():
+             # Pass the original, unmodified message string intended for the UI to the DB log
+             transcription_model.update_job_progress(job_id, message)
+    except Exception as e:
+        # Log error updating DB progress, but don't stop the main process
+        logging.error(f"[JOB:{short_job_id}] Failed to update DB progress log: {e}")
+
+# --- API Client Factory ---
 
 def get_transcription_api(api_choice: str) -> Any:
-    if api_choice == 'assemblyai':
-        return AssemblyAITranscriptionAPI(current_app.config['ASSEMBLYAI_API_KEY'])
-    elif api_choice == 'whisper':
-        return OpenAITranscriptionAPI(current_app.config['OPENAI_API_KEY'])
-    elif api_choice == 'gpt4o':
-        return OpenAIGPT4oTranscriptionAPI(current_app.config['OPENAI_API_KEY'])
-    else:
-        message = f"Invalid API choice: {api_choice}"
-        logging.error(message)
-        raise ValueError(message)
+    """Factory function to get an instance of the chosen transcription API client."""
+    # This function now runs within the app context provided by process_transcription
+    # API client __init__ methods will log their own initialization.
+    try:
+        if api_choice == 'assemblyai':
+            api_key = current_app.config.get('ASSEMBLYAI_API_KEY')
+            if not api_key:
+                raise ValueError("AssemblyAI API key is not configured.")
+            return AssemblyAITranscriptionAPI(api_key)
+        elif api_choice == 'whisper':
+            api_key = current_app.config.get('OPENAI_API_KEY')
+            if not api_key:
+                raise ValueError("OpenAI API key is not configured.")
+            return OpenAITranscriptionAPI(api_key)
+        elif api_choice == 'gpt4o':
+            api_key = current_app.config.get('OPENAI_API_KEY')
+            if not api_key:
+                raise ValueError("OpenAI API key is not configured.")
+            return OpenAIGPT4oTranscriptionAPI(api_key)
+        else:
+            message = f"Invalid API choice specified: {api_choice}"
+            logging.error(f"[SYSTEM] {message}") # Log as system error if choice is invalid
+            raise ValueError(message)
+    except ValueError as ve:
+         # Log config errors during factory creation
+         logging.error(f"[SYSTEM] Configuration error getting API client for '{api_choice}': {ve}")
+         raise # Re-raise to be caught by process_transcription
+
+# --- Main Background Transcription Process ---
 
 def process_transcription(job_id: str, temp_filename: str, language_code: str,
                           api_choice: str, original_filename: str, context_prompt: str = "") -> None:
     """
-    Main entry point for handling audio transcription in the background.
-    Splits large files if necessary, calls the appropriate transcription API,
-    and stores the result in the database.
+    Handles audio transcription in the background, updating status in the database.
+    Runs within a Flask application context.
     """
-    with app.app_context():
+    short_job_id = job_id[:8] # For console logging
+    with app.app_context(): # Ensure access to current_app.config and models
         try:
-            append_progress(job_id, "Transcription started.")
-            append_progress(job_id, f"Received language code: {language_code}, API choice: {api_choice}")
-            append_progress(job_id, f"API call parameters: File: {temp_filename}, Language: {language_code}, Context Prompt: {context_prompt}")
+            # Update status: Processing (model function logs the DB update)
+            transcription_model.update_job_status(job_id, 'processing')
+            # Log start using the helper - SIMPLE UI MESSAGE
+            _update_progress(job_id, "Transcription process started.")
+            # SIMPLE UI MESSAGE
+            _update_progress(job_id, f"Using API: {api_choice}, Language: {language_code}")
 
-            api = get_transcription_api(api_choice)
-            progress_callback = lambda msg: append_progress(job_id, msg)
+            # Check for potential splitting (before calling API client)
+            try:
+                file_size = os.path.getsize(temp_filename)
+                limit = file_service.OPENAI_MAX_FILE_SIZE # Default to OpenAI limit
+                # Add specific limits if AssemblyAI differs significantly
+                # if api_choice == 'assemblyai': limit = ASSEMBLYAI_LIMIT
 
-            # Pass context_prompt to whisper or gpt4o, skip for assemblyAI
+                # Only log splitting if size exceeds limit AND API requires splitting
+                if file_size > limit and api_choice in ('whisper', 'gpt4o'):
+                     # SIMPLE UI MESSAGE
+                     _update_progress(job_id, f"Splitting large file: {original_filename}...")
+            except OSError as e:
+                 # Use warning level for non-fatal issue during check - SIMPLE UI MESSAGE
+                 _update_progress(job_id, f"Warning: Could not get size of temp file '{os.path.basename(temp_filename)}'.", is_error=False) # Log as warning
+
+
+            # Get API client instance
+            api = get_transcription_api(api_choice) # Logs initialization internally to console
+
+            # Define the progress callback to use our helper
+            # This lambda ensures all messages from the API client are logged via _update_progress
+            # The messages passed *to* this lambda from the clients will be the simple UI versions.
+            progress_callback = lambda msg, is_err=False: _update_progress(job_id, msg, is_error=is_err)
+
+            # Execute transcription via the chosen API client
+            # Pass original_filename TO API CLIENTS for their internal logging/progress
+            # SIMPLE UI MESSAGE (added before calling transcribe)
+            _update_progress(job_id, f"Starting transcription of file: {original_filename}")
             if api_choice in ('gpt4o', 'whisper'):
                 transcription_text, detected_language = api.transcribe(
-                    temp_filename,
-                    language_code,
+                    audio_file_path=temp_filename,
+                    language_code=language_code,
                     progress_callback=progress_callback,
-                    context_prompt=context_prompt
+                    context_prompt=context_prompt,
+                    original_filename=original_filename # Pass original filename
                 )
-            else:
+            else: # AssemblyAI
                 transcription_text, detected_language = api.transcribe(
-                    temp_filename,
-                    language_code,
-                    progress_callback=progress_callback
+                    audio_file_path=temp_filename,
+                    language_code=language_code,
+                    progress_callback=progress_callback,
+                    original_filename=original_filename # Pass original filename
                 )
 
-            transcription_data = {
-                'id': job_id,
-                'filename': original_filename,
-                'detected_language': detected_language,
-                'transcription_text': transcription_text,
-                'api_used': api_choice,
-                # Store a valid ISO format date string (without microseconds) so JavaScript can parse it.
-                'created_at': datetime.now().replace(microsecond=0).isoformat()
-            }
-            transcription.insert_transcription(transcription_data)
-            append_progress(job_id, "Transcription successful.")
-            with jobs_lock:
-                jobs[job_id]['result'] = transcription_data
-        except Exception as e:
-            error_message = f"An error occurred: {str(e)}"
-            append_progress(job_id, error_message)
-            with jobs_lock:
-                jobs[job_id]['result'] = {'error': str(e)}
+            # Check if transcription failed within the API client (indicated by None return)
+            if transcription_text is None:
+                 # Specific error should have been logged via callback by the client
+                 # Raise a generic exception here to be caught below, ensuring error status is set
+                raise Exception("Transcription failed via API client. See previous logs for details.")
+
+            # Ensure detected_language has a sensible default if API returns None/empty
+            detected_language = detected_language or language_code or 'unknown'
+
+            # Finalize success in DB (model function logs the DB update)
+            # The message "Transcription successful and saved." is added inside finalize_job_success
+            transcription_model.finalize_job_success(
+                job_id,
+                transcription_text,
+                detected_language
+            )
+            # Add a final verbose message for UI after DB save - SIMPLE UI MESSAGE
+            _update_progress(job_id, f"Finalized job {short_job_id} successfully.")
+
+
+        except ValueError as ve: # Configuration or validation errors before/during API init
+            error_message = f"Configuration or Input Error: {str(ve)}"
+            # Log error using helper - SIMPLE UI ERROR MESSAGE
+            _update_progress(job_id, f"ERROR: {error_message}", is_error=True)
+            # Set final error status in DB (model function logs DB action)
+            transcription_model.set_job_error(job_id, error_message)
+        except OpenAIError as oae: # Specific OpenAI errors (if not caught by client)
+            error_message = f"OpenAI API Error: {str(oae)}"
+            # SIMPLE UI ERROR MESSAGE
+            _update_progress(job_id, f"ERROR: {error_message}", is_error=True)
+            # User-friendly message for DB status
+            transcription_model.set_job_error(job_id, "An error occurred with the OpenAI API.")
+        # Add specific AssemblyAI error catch if library provides one, e.g., except aai.Error as aae:
+        except Exception as e: # Catch-all for unexpected errors in this service layer or raised from clients
+            error_message = f"An unexpected error occurred: {str(e)}"
+             # SIMPLE UI ERROR MESSAGE
+            _update_progress(job_id, f"ERROR: {error_message}", is_error=True)
+            # Log the full traceback for debugging (console only)
+            logging.exception(f"[JOB:{short_job_id}] Unexpected error during transcription process")
+            # User-friendly message for DB status
+            transcription_model.set_job_error(job_id, "An unexpected internal error occurred.")
         finally:
-            with jobs_lock:
-                jobs[job_id]['finished'] = True
+            # Cleanup temporary file (original upload)
             if os.path.exists(temp_filename):
-                os.remove(temp_filename)
-                logging.info(f"Deleted temporary file: {temp_filename}")
+                try:
+                    os.remove(temp_filename)
+                    # Log cleanup success with job context (console only)
+                    logging.info(f"[JOB:{short_job_id}] Cleaned up temp upload: {os.path.basename(temp_filename)}")
+                    # Add verbose UI message for cleanup - USE FULL PATH AS REQUESTED
+                    _update_progress(job_id, f"Deleted temporary upload file: {temp_filename}")
+                except OSError as ose:
+                    # Log cleanup failure as an error with job context (console only)
+                    logging.error(f"[JOB:{short_job_id}] Error deleting temp upload file '{os.path.basename(temp_filename)}': {ose}")
+                    # Add verbose UI warning message - USE BASENAME HERE FOR BREVITY
+                    _update_progress(job_id, f"Warning: Failed to delete temporary upload file {os.path.basename(temp_filename)}.", is_error=False) # Log as warning
+            # Note: Chunk files are cleaned up within the API client's _split_and_transcribe method's finally block.

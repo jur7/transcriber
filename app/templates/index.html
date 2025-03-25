@@ -43,9 +43,10 @@
               </div>
               <div class="input-field">
                 <select id="apiSelect">
+                  <!-- Reordered Options: AssemblyAI is now last -->
                   <option value="gpt4o">OpenAI GPT4o Transcribe</option>
-                  <option value="assemblyai">AssemblyAI</option>
                   <option value="whisper">OpenAI Whisper</option>
+                  <option value="assemblyai">AssemblyAI</option>
                 </select>
                 <label>Transcription API</label>
               </div>
@@ -57,16 +58,16 @@
                 </select>
                 <label>Language</label>
               </div>
-              
+
               <!-- Context Prompt Input (only for OpenAI APIs) -->
               <div id="contextPromptContainer" class="input-field" style="display: none;">
                 <label for="contextPrompt">Context prompt</label>
                 <textarea id="contextPrompt" class="materialize-textarea" placeholder="Enter context prompt..." oninput="validateContextPrompt()"></textarea>
                 <span id="contextPromptError" class="helper-text"></span>
               </div>
-              
+
               <button class="btn waves-effect waves-light" id="transcribeBtn">
-                Transcribe <i class="material-icons right">send</i>
+                TRANSCRIBE <i class="material-icons right">send</i>
               </button>
               <div class="progress" style="display: none;">
                 <div class="indeterminate"></div>
@@ -84,12 +85,13 @@
           </div>
         </div>
       </div>
-      
+
       <!-- Transcription History Section -->
       <div class="row">
         <div class="col s12">
           <span class="card-title">Transcription History</span>
           <ul class="collection with-header" id="transcriptionHistory">
+            <!-- History items will be loaded here by JavaScript -->
           </ul>
           <button class="btn waves-effect waves-light red" id="clearAllBtn" style="display: none;">
             Clear All <i class="material-icons right">delete_forever</i>
@@ -101,21 +103,28 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>
+      // Initialize Materialize selects and set defaults after DOM is ready
       document.addEventListener('DOMContentLoaded', function() {
           var defaultApi = "{{ default_api }}";
           var defaultLanguage = "{{ default_language }}";
-          var apiSelect = document.getElementById('apiSelect');
-          var languageSelect = document.getElementById('languageSelect');
-          if (apiSelect) {
-              apiSelect.value = defaultApi;
-              M.FormSelect.init(apiSelect);
+          var apiSelectElem = document.getElementById('apiSelect');
+          var languageSelectElem = document.getElementById('languageSelect');
+
+          // Initialize API Select and set default
+          if (apiSelectElem) {
+              // Set the value *before* initializing Materialize select
+              apiSelectElem.value = defaultApi;
+              M.FormSelect.init(apiSelectElem);
+              // Trigger change event *after* initialization to ensure UI updates (like context prompt visibility)
+              apiSelectElem.dispatchEvent(new Event('change'));
           }
-          if (languageSelect) {
-              languageSelect.value = defaultLanguage;
-              M.FormSelect.init(languageSelect);
+
+          // Initialize Language Select and set default
+          if (languageSelectElem) {
+              // Set the value *before* initializing Materialize select
+              languageSelectElem.value = defaultLanguage;
+              M.FormSelect.init(languageSelectElem);
           }
-          var event = new Event('change');
-          apiSelect.dispatchEvent(event);
       });
     </script>
   </body>
