@@ -20,7 +20,7 @@ The application automatically handles large files by splitting them into managea
 - **Large File Handling:** Audio files larger than 25MB are automatically split into chunks to overcome API limits.
 - **Docker Deployment:** Simple deployment using Docker Compose or directly via Docker Hub.
 
-![Screenshot of the Transcriber App](Transcriber-screenshot-2025.png)
+![Screenshot of the Transcriber App](Transcriber-screenshots-2025.png)
 
 ## Usage
 
