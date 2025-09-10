@@ -11,6 +11,9 @@ ALLOWED_EXTENSIONS = {'mp3', 'm4a', 'wav', 'ogg', 'webm'}
 CHUNK_LENGTH_MS = 10 * 60 * 1000
 # Maximum file size for OpenAI APIs (25MB) - Moved here
 OPENAI_MAX_FILE_SIZE = 25 * 1024 * 1024
+# Maximum input length = 1500 sec for o4-transcribe
+OPENAI_MAX_LENGTH_MS_O4 = 1400 * 1000
+
 # Files to ignore during cleanup
 IGNORE_FILES = {'.DS_Store', '.gitkeep'}
 
@@ -25,6 +28,33 @@ def ordinal(n: int) -> str:
     else:
         suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
     return f"{n}{suffix}"
+
+
+def get_audio_file_length(file_path: str) -> int:
+    base_name_orig = os.path.basename(file_path)
+
+    try:
+        # Add explicit logging for pydub loading attempt (console only)
+        logging.info(f"[SYSTEM] Loading audio file '{base_name_orig}' for checking...")
+        audio = AudioSegment.from_file(file_path)
+        logging.info(f"[SYSTEM] Successfully loaded '{base_name_orig}'. Duration: {len(audio) / 1000:.2f}s")
+    except pydub_exceptions.CouldntDecodeError as cde:
+        # SIMPLE UI ERROR MESSAGE
+        msg = f"ERROR: Could not decode audio file '{base_name_orig}'. Ensure ffmpeg is installed and file is valid."
+        return 0
+    except FileNotFoundError:
+        # SIMPLE UI ERROR MESSAGE
+        msg = f"ERROR: Audio file not found at '{file_path}'"
+        return 0
+    except Exception as e: # Catch other potential pydub errors
+        # SIMPLE UI ERROR MESSAGE
+        msg = f"ERROR: Failed loading audio file '{base_name_orig}': {e}"
+        return 0
+
+    total_length = len(audio)
+    return total_length
+
+
 
 def split_audio_file(file_path: str, temp_dir: str,
                      progress_callback: Optional[Callable[[str, bool], None]] = None,

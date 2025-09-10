@@ -70,15 +70,16 @@ class OpenAIGPT4oTranscriptionAPI:
                  return None, None
 
             file_size = os.path.getsize(audio_file_path)
+            file_length = file_service.get_audio_file_length(audio_file_path)
             # Check if splitting is needed (progress message handled by service layer)
-            if file_size > file_service.OPENAI_MAX_FILE_SIZE:
+            if file_size > file_service.OPENAI_MAX_FILE_SIZE or file_length > file_service.OPENAI_MAX_LENGTH_MS_O4:
                 # Delegate to splitting method - it will use callback for progress
                 logging.info(f"{log_prefix} File size ({file_size / 1024 / 1024:.2f}MB) exceeds limit. Starting chunked transcription.") # Console log
                 # The splitting function will send its own UI messages
                 return self._split_and_transcribe(audio_file_path, requested_language, progress_callback, context_prompt, display_filename) # Pass display_filename
             else:
                 # Transcribe single file
-                logging.info(f"{log_prefix} File size ({file_size / 1024 / 1024:.2f}MB) within limit. Processing as single file.") # Console log
+                logging.info(f"{log_prefix} File size ({file_size / 1024 / 1024:.2f}MB) within limit, record within limit. Processing as single file.") # Console log
                 abs_path = os.path.abspath(audio_file_path)
                 temp_dir = os.path.dirname(abs_path)
                 if not file_service.validate_file_path(abs_path, temp_dir):
