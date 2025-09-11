@@ -34,6 +34,22 @@ class OpenAITranscriptionAPI: # Renamed from original
             logging.error(f"[{self.API_NAME}] Failed to initialize OpenAI client: {e}")
             raise ValueError(f"OpenAI client initialization failed: {e}") from e
 
+    def lang_to_code(self, lang_name_or_code: str) -> str:
+        lang_code = None
+        lang_name_or_code = lang_name_or_code.strip().lower()
+        # already have a supported language code, return it
+        if lang_name_or_code in (code.lower() for code in Config.SUPPORTED_LANGUAGE_CODES):
+            lang_code = lang_name_or_code
+        # probably the language name
+        if not lang_code:
+        # Reverse map names -> codes (ignore the 'auto' label if you want)
+            name_to_code = {name.lower(): code for code, name in Config.SUPPORTED_LANGUAGE_NAMES.items()}
+            lang_code = name_to_code.get(lang_name_or_code)
+        # language not detected -> auto
+        if not lang_code:
+            lang_code = "auto"
+        return lang_code
+    
     def transcribe(self, audio_file_path: str, language_code: str,
                    progress_callback: ProgressCallback = None,
                    context_prompt: str = "",
@@ -242,7 +258,7 @@ class OpenAITranscriptionAPI: # Renamed from original
                 if requested_language == 'auto':
                     if first_chunk_language:
                         # Use language from first chunk for consistency
-                        current_chunk_lang_param = first_chunk_language
+                        current_chunk_lang_param = self.lang_to_code(first_chunk_language)
                         response_format = "text"
                         # Console log only
                         logging.info(f"{chunk_log_prefix} Using detected language '{first_chunk_language}' from first chunk.")
