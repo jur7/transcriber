@@ -11,8 +11,9 @@ ALLOWED_EXTENSIONS = {'mp3', 'm4a', 'wav', 'ogg', 'webm'}
 CHUNK_LENGTH_MS = 10 * 60 * 1000
 # Maximum file size for OpenAI APIs (25MB) - Moved here
 OPENAI_MAX_FILE_SIZE = 25 * 1024 * 1024
-# Maximum input length = 1500 sec for o4-transcribe
-OPENAI_MAX_LENGTH_MS_O4 = 1400 * 1000
+# Maximum input length = 1500 sec for o4-transcribe AND 2048 output tokens
+#OPENAI_MAX_LENGTH_MS_O4 = 1400 * 1000
+OPENAI_MAX_LENGTH_MS_4O = CHUNK_LENGTH_MS
 
 # Files to ignore during cleanup
 IGNORE_FILES = {'.DS_Store', '.gitkeep'}
