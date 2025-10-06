@@ -4,9 +4,15 @@ import os
 import logging
 import time
 from typing import Tuple, Optional, Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI, OpenAIError, APIError, APIConnectionError, RateLimitError
 from app.services import file_service
 from app.config import Config
+
+# Raised when a JSON response hits the text token limit and we want to retry
+class OutputTokenLimitExceededError(Exception): pass
+
+OUTPUT_TEXT_TOKENS_LIMIT = 2048
 
 # Define a type hint for the progress callback
 ProgressCallback = Optional[Callable[[str, bool], None]] # Message, IsError
@@ -15,6 +21,7 @@ class OpenAIGPT4oTranscriptionAPI:
     """
     Integration with OpenAI GPT4o Transcribe using synchronous requests.
     Handles large file splitting. Reports progress via callback.
+    Supports parallel chunk transcription with bounded concurrency.
     """
     MODEL_NAME = "gpt-4o-transcribe" # Use constant for model name
     API_NAME = "OpenAI_GPT4o" # For logging
@@ -91,41 +98,25 @@ class OpenAIGPT4oTranscriptionAPI:
                      logging.error(f"{log_prefix} {msg}") # Console log
                      raise ValueError(msg) # Raise to be caught below
 
-                with open(abs_path, "rb") as audio_file:
-                    api_params = {
-                        "model": self.MODEL_NAME,
-                        "file": audio_file,
-                        "response_format": "text",
-                        "prompt": context_prompt
-                    }
-                    # Language parameter is omitted as not supported by gpt-4o-transcribe endpoint.
+                # High-level UI message for single-file transcription
+                if progress_callback:
+                    progress_callback(f"Transcribing with OpenAI {self.MODEL_NAME}...", False)
 
-                    # Log the parameters being sent (console only)
-                    log_params = {k: v for k, v in api_params.items() if k != 'file'}
-                    lang_note = ""
-                    if requested_language == 'auto':
-                        lang_note = " (Language: 'auto' requested - implicit detection by model)"
-                        # SIMPLE UI Message for language setting
-                        if progress_callback: progress_callback("Language: 'auto' requested - implicit detection by model.", False)
-                    elif requested_language:
-                         lang_note = f" (Language: '{requested_language}' requested - param omitted as unsupported)"
-                         # SIMPLE UI Message for language setting
-                         if progress_callback: progress_callback(f"Language: '{requested_language}' requested (parameter omitted as unsupported).", False)
-                    logging.info(f"{log_prefix} Calling API with parameters: {log_params}{lang_note}") # Console log
+                # Delegate the actual API call to the retry-enabled helper
+                chunk_text = self._transcribe_single_chunk_with_retry(
+                    abs_path,
+                    1, 1,
+                    requested_language,
+                    progress_callback,
+                    context_prompt,
+                    f"{log_prefix}:Single",
+                )
 
-                    # Report API call via callback - SIMPLE UI MESSAGE
-                    if progress_callback: progress_callback(f"Transcribing with OpenAI {self.MODEL_NAME}...", False)
+                # If helper failed after retries, it already reported errors; abort early
+                if chunk_text is None:
+                    return None, None
 
-                    start_time = time.time()
-                    # Add console log for API call start
-                    logging.info(f"{log_prefix} Calling OpenAI API...")
-                    transcript_response = self.client.audio.transcriptions.create(**api_params)
-                    duration = time.time() - start_time
-                    # Add console log for API call success
-                    logging.info(f"{log_prefix} OpenAI API call successful. Duration: {duration:.2f}s")
-
-                    # Response is directly the text string
-                    transcription_text = transcript_response if isinstance(transcript_response, str) else str(transcript_response)
+                transcription_text = chunk_text
 
             # Language Detection Note & Logging:
             if requested_language == 'auto':
@@ -210,34 +201,66 @@ class OpenAIGPT4oTranscriptionAPI:
         try:
             # file_service.split_audio_file uses the progress_callback internally for UI messages
             chunk_files = file_service.split_audio_file(audio_file_path, temp_dir, progress_callback)
-            if not chunk_files:
+            if not chunk_files or len(chunk_files) == 0:
                 # Error logged by split_audio_file via callback
                 raise Exception("Audio splitting failed or resulted in no chunks.")
 
-            transcription_texts = []
             total_chunks = len(chunk_files)
             logging.info(f"{log_prefix} Starting transcription of {total_chunks} chunks...") # Console log only
             # No separate UI message needed here, chunk processing messages will follow
 
-            for idx, chunk_path in enumerate(chunk_files):
-                chunk_num = idx + 1
-                # Construct specific log prefix for console logs
-                chunk_log_prefix = f"{log_prefix}:Chunk{chunk_num}"
+            max_workers = max(1, int(getattr(Config, 'OPENAI_MAX_CONCURRENCY', 3)))
+            max_workers = min(max_workers, total_chunks) # Do not exceed total chunks
+            results: list[Optional[str]] = [None] * total_chunks
+            error: Optional[Exception] = None
 
-                # Pass requested_language - the chunk method will handle logging params
-                # The chunk method will send its own UI messages via callback
-                chunk_text = self._transcribe_single_chunk_with_retry(
-                    chunk_path, chunk_num, total_chunks, requested_language,
-                    progress_callback, context_prompt, chunk_log_prefix # Pass specific log prefix
-                )
-                if chunk_text is None:
-                    # Error occurred and was reported by _transcribe_single_chunk_with_retry via callback
-                    raise Exception(f"Failed to transcribe chunk {chunk_num}. Aborting.")
-                transcription_texts.append(chunk_text)
-                # Console log only
-                logging.info(f"{chunk_log_prefix} Transcription successful.")
+            if progress_callback:
+                progress_callback(f"Transcribing {max_workers} chunks in parallel. Already transcribed: 0/{total_chunks}.", False)
 
-            full_transcription = " ".join(filter(None, transcription_texts))
+            chunk_compl = 0
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_index = {}
+                for idx, chunk_path in enumerate(chunk_files):
+                    chunk_num = idx + 1
+                    chunk_log_prefix = f"{log_prefix}:Chunk{chunk_num}"
+                    future = executor.submit(
+                        self._transcribe_single_chunk_with_retry,
+                        chunk_path,
+                        chunk_num,
+                        total_chunks,
+                        requested_language,
+                        progress_callback,
+                        context_prompt,
+                        chunk_log_prefix,
+                    )
+                    future_to_index[future] = idx
+
+                for future in as_completed(future_to_index):
+                    idx = future_to_index[future]
+                    chunk_num = idx + 1
+                    try:
+                        chunk_text = future.result()
+                    except Exception as e:
+                        error = e
+                        logging.exception(f"{log_prefix}:Chunk{chunk_num} Unexpected exception during transcription:")
+                        break
+                    if chunk_text is None:
+                        error = Exception(f"Failed to transcribe chunk {chunk_num}.")
+                        break
+                    results[idx] = chunk_text
+                    chunk_compl += 1
+                    # Update progress via callback
+                    # Report individual chunk success via callback - SIMPLE UI MESSAGE
+                    if progress_callback:
+                        progress_callback(f"Transcribing {min(max_workers, total_chunks)} chunks in parallel. Already transcribed: {chunk_compl}/{total_chunks}.", False)
+                    # Console log only
+                    logging.info(f"{log_prefix}:Chunk{chunk_num} Transcription successful.")
+
+            # If any error occurred, abort
+            if error is not None or any(r is None for r in results):
+                raise Exception(str(error) if error else "One or more chunks failed to transcribe.")
+
+            full_transcription = " ".join(filter(None, results))
             # Console log only
             logging.info(f"{log_prefix} Successfully aggregated transcriptions from {total_chunks} chunks.")
 
@@ -292,14 +315,15 @@ class OpenAIGPT4oTranscriptionAPI:
         """
         requested_language = language_code
         last_error = None
+        last_output_tokens = None
         chunk_base_name = os.path.basename(chunk_path)
         # Use provided log_prefix or construct one for console logs
         effective_log_prefix = log_prefix or f"[{self.API_NAME}:Chunk{idx}]"
 
         for attempt in range(max_retries):
             # Report chunk processing start via callback - SIMPLE UI MESSAGE
-            if progress_callback:
-                progress_callback(f"Transcribing chunk {idx}/{total_chunks}", False)
+#            if progress_callback:
+#                progress_callback(f"Transcribing chunk {idx}/{total_chunks}", False)
 
             try:
                 abs_chunk_path = os.path.abspath(chunk_path)
@@ -313,29 +337,75 @@ class OpenAIGPT4oTranscriptionAPI:
                     api_params = {
                         "model": self.MODEL_NAME,
                         "file": audio_file,
-                        "response_format": "text",
-                        "prompt": context_prompt
+                        # Request JSON to access usage tokens and text
+                        "response_format": "json",
                     }
+
+                    # focus model on specific language
+                    if requested_language != 'auto':
+                        api_params["temperature"] = 0
+
+                    if last_output_tokens is not None and last_output_tokens >= OUTPUT_TEXT_TOKENS_LIMIT:
+                        api_params["temperature"] = 0.01
+
+                    # If user imput non-blank prompt, add it to parameters
+                    # Otherwise, results with blank prompt can be worse
+                    if context_prompt != "":
+                        api_params["prompt"] = context_prompt
+
                     # Language param omitted
 
                     # Log API call parameters internally (console only)
-                    log_params = {k: v for k, v in api_params.items() if k != 'file'}
                     lang_note = ""
                     if requested_language == 'auto':
                         lang_note = " (Lang: 'auto' requested - implicit detection)"
-                    elif requested_language:
-                         lang_note = f" (Lang: '{requested_language}' requested - param omitted)"
-                    logging.info(f"{effective_log_prefix} Attempt {attempt+1}: Calling API with parameters: {log_params}{lang_note}")
+                    elif requested_language in Config.SUPPORTED_LANGUAGE_CODES:
+                        api_params["language"] = requested_language
+                        ui_lang_msg = f"Language set to '{requested_language}'."
+ #                       if progress_callback: progress_callback(ui_lang_msg, False)
+                        logging.info(f"{log_prefix} anguage set to '{requested_language}'. Using auto-detection as fallback.")
+                    else:
+                        # Console log
+                        logging.warning(f"{log_prefix} Invalid language code '{requested_language}'. Using auto-detection as fallback.")
+                        # SIMPLE UI Message for fallback
+                        ui_lang_msg = f"Invalid language code '{requested_language}'. Using implicit detection."
+ #                       if progress_callback: progress_callback(ui_lang_msg, False) # Report as info/warning
+
+                    # Log the parameters being sent (console only)
+                    log_params = {k: v for k, v in api_params.items() if k != 'file'}
+                    logging.info(f"{log_prefix} Calling API with parameters: {log_params}{lang_note}") # Console log
 
                     start_time = time.time()
                     # Console log only
                     logging.info(f"{effective_log_prefix} Attempt {attempt+1}: Calling OpenAI API...")
                     response = self.client.audio.transcriptions.create(**api_params)
                     duration = time.time() - start_time
-                    # Console log only
-                    logging.info(f"{effective_log_prefix} Attempt {attempt+1}: API call successful. Duration: {duration:.2f}s")
 
-                    text = response if isinstance(response, str) else str(response)
+                    # Parse JSON response for text and usage tokens
+                    text = None
+                    output_tokens = None
+                    try:
+                        # openai.types.audio.transcription.Transcription has .text and optional .usage
+                        if hasattr(response, "text"):
+                            text = getattr(response, "text", None)
+                        # usage can be tokens or duration; check for token usage
+                        usage = getattr(response, "usage", None)
+                        if usage is not None and getattr(usage, "type", None) == "tokens":
+                            output_tokens = getattr(usage, "output_tokens", None)
+                    except Exception as parse_err:
+                        logging.warning(f"{effective_log_prefix} Could not parse JSON response fields: {parse_err}")
+
+                    # Console log only
+                    if output_tokens is not None:
+                        last_output_tokens = output_tokens
+                        logging.info(f"{effective_log_prefix} Attempt {attempt+1}: API call successful. Duration: {duration:.2f}s. Output tokens: {output_tokens}")
+                        # If token cap reached and we have retries left, raise to trigger a retry
+                        if output_tokens >= OUTPUT_TEXT_TOKENS_LIMIT and attempt < max_retries - 1:
+                            raise OutputTokenLimitExceededError(f"Output tokens {output_tokens} >= limit {OUTPUT_TEXT_TOKENS_LIMIT}")
+                        if output_tokens >= OUTPUT_TEXT_TOKENS_LIMIT:
+                            logging.warning(f"{effective_log_prefix} Output tokens {output_tokens} reached or exceeded limit {OUTPUT_TEXT_TOKENS_LIMIT}. Result may be truncated.")
+                    else:
+                        logging.info(f"{effective_log_prefix} Attempt {attempt+1}: API call successful. Duration: {duration:.2f}s")
                 # Success
                 # DO NOT send individual chunk success message to UI to reduce noise
                 return text.strip() if text else "" # Return empty string for empty transcript
@@ -359,6 +429,15 @@ class OpenAIGPT4oTranscriptionAPI:
                  # Console log
                  logging.error(f"{effective_log_prefix} API error on chunk {idx}, attempt {attempt+1}: {e}. Retrying in {wait_time}s...")
                  time.sleep(wait_time)
+            except OutputTokenLimitExceededError as tle:
+                last_error = tle
+                wait_time = 2 ** attempt
+                # SIMPLE UI Message for retry
+                error_detail = (f"Output token limit reached on chunk {idx}, attempt {attempt+1}. Retrying in {wait_time}s...")
+                if progress_callback: progress_callback(error_detail, False)
+                # Console log
+                logging.warning(f"{effective_log_prefix} Output tokens limit reached (attempt {attempt+1}). Retrying in {wait_time}s... ({tle})")
+                time.sleep(wait_time)
             except OpenAIError as oae:
                 last_error = oae
                 # SIMPLE UI Message for fatal error

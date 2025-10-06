@@ -14,14 +14,15 @@ document.addEventListener('DOMContentLoaded', function() {
   var apiNameMap = {
     'gpt4o': 'OpenAI GPT4o Transcribe',
     'assemblyai': 'AssemblyAI',
-    'whisper': 'OpenAI Whisper'
+    'whisper': 'OpenAI Whisper',
+    'gemini': 'Gemini 2.5 Pro'
   };
 
   // Handle API selection change to show/hide context prompt
   var apiSelect = document.getElementById('apiSelect');
   var contextPromptContainer = document.getElementById('contextPromptContainer');
   apiSelect.addEventListener('change', function() {
-      if (this.value === 'gpt4o' || this.value === 'whisper') {
+      if (this.value === 'gpt4o' || this.value === 'whisper' || this.value === 'gemini') {
           contextPromptContainer.style.display = 'block';
       } else {
           contextPromptContainer.style.display = 'none';
@@ -86,7 +87,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     // Make API call to backend
-    fetch('/api/transcribe', {
+    fetch('./api/transcribe', {
       method: 'POST',
       body: formData
     })
@@ -130,7 +131,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('clearAllBtn').addEventListener('click', function() {
     // --- CONFIRMATION ONLY HERE ---
     if (confirm('Are you sure you want to clear all transcriptions? This cannot be undone.')) {
-      fetch('/api/transcriptions/clear', { method: 'DELETE' })
+      fetch('./api/transcriptions/clear', { method: 'DELETE' })
       .then(response => response.json())
       .then(data => {
         M.toast({html: data.message});
@@ -189,7 +190,7 @@ function validateContextPrompt() {
  * Fetches all transcriptions from the backend and displays them.
  */
 function loadTranscriptions() {
-  fetch('/api/transcriptions')
+  fetch('./api/transcriptions')
   .then(response => {
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       return response.json();
@@ -466,7 +467,7 @@ function deleteTranscription(transcriptionId, transcriptionItem) {
     }
   });
 
-  fetch(`/api/transcriptions/${transcriptionId}`, { method: 'DELETE' })
+  fetch(`./api/transcriptions/${transcriptionId}`, { method: 'DELETE' })
   .then(response => {
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       return response.json();
@@ -504,7 +505,7 @@ function pollProgress(jobId) {
           return;
       }
 
-      fetch('/api/progress/' + jobId)
+      fetch('./api/progress/' + jobId)
       .then(response => {
           if (!response.ok) {
               // Handle HTTP errors during polling (like 404 Not Found)
@@ -513,7 +514,7 @@ function pollProgress(jobId) {
           return response.json();
       })
       .then(jobData => {
-          // NOTE: jobData structure depends on the backend /api/progress response
+          // NOTE: jobData structure depends on the backend ./api/progress response
           // Assuming it returns { status: '...', progress: [...], error_message: '...', result: {...} }
 
           // Process and display new progress messages from the log
@@ -528,10 +529,13 @@ function pollProgress(jobId) {
 
                   // Determine icon based on message content (case-insensitive)
                   const lowerMessage = message.toLowerCase();
-                  if (lowerMessage.includes("split")) icon = "call_split";
+                  if (lowerMessage.includes("silence")) icon = "blur_linear";
+                  else if (lowerMessage.includes("split")) icon = "call_split";
                   // USE 'layers' ICON FOR CHUNK CREATION
                   else if (lowerMessage.includes("created") && lowerMessage.includes("chunk")) icon = "layers";
                   else if (lowerMessage.includes("transcribing chunk")) icon = "record_voice_over"; // Match simplified message
+                  else if (lowerMessage.includes("already transcribed")) icon = "record_voice_over"; // Match simplified message
+                  else if (lowerMessage.includes("transcribing with")) icon = "record_voice_over"; // Match simplified message
                   else if (lowerMessage.includes("calling api")) icon = "cloud_upload";
                   else if (lowerMessage.includes("aggregat")) icon = "merge_type";
                   else if (lowerMessage.includes("cleaning up")) icon = "cleaning_services";

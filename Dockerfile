@@ -10,6 +10,13 @@ ENV PYTHONUNBUFFERED=1
 # Set the working directory inside the container.
 WORKDIR /app
 
+
+RUN rm /etc/apt/sources.list
+RUN echo 'deb http://archive.debian.org/debian buster main contrib non-free'  >> /etc/apt/sources.list
+RUN echo 'deb http://archive.debian.org/debian buster-updates main contrib non-free'  >> /etc/apt/sources.list
+RUN echo 'deb http://archive.debian.org/debian-security buster/updates main contrib non-free'  >> /etc/apt/sources.list
+# Install system dependencies: ffmpeg (required for pydub).
+
 # Install system dependencies: ffmpeg (required for pydub).
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg tini && \

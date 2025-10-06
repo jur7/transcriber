@@ -39,3 +39,8 @@ Thumbs.db
 database/*.db
 uploads/
 transcriptions/
+
+# Directories with test audio data and test scripts
+scripts/
+test/
+test1/

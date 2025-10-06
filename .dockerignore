@@ -31,3 +31,8 @@ Thumbs.db
 uploads/
 transcriptions/
 database/*.db
+
+# Exclude directories with test audio data and test scripts
+scripts/
+test/
+test1/

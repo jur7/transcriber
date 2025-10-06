@@ -5,6 +5,8 @@ import threading
 import time
 import logging
 from flask import Flask, render_template
+#from flask_sock import Sock
+from werkzeug.middleware.proxy_fix import ProxyFix
 from app.config import Config
 
 # Configure root logger - Use a simple format, prefixes will be added in messages
@@ -18,6 +20,12 @@ app = Flask(__name__,
             template_folder=os.path.join(os.getcwd(), 'app', 'templates'),
             static_folder=os.path.join(os.getcwd(), 'app', 'static'))
 app.config.from_object(Config)
+
+#sock = Sock(app)  # Provide websocket support via Flask-Sock
+
+
+# Ensure Flask/Gunicorn respect reverse-proxy headers (X-Forwarded-*)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 
 # Initialize database and register teardown context
@@ -34,14 +42,39 @@ app.register_blueprint(transcriptions_bp, url_prefix='/api')
 from app.api.auth import auth_bp
 app.register_blueprint(auth_bp, url_prefix='/api')
 
+# Register realtime websocket proxy routes.
+#from app.api import realtime_ws
+#realtime_ws.init_app(sock)
+
 @app.route('/')
 def index():
     """Renders the main index page."""
-    # No specific logging needed here unless debugging routing
-    return render_template('index.html',
-                           default_api=app.config.get('DEFAULT_API'),
-                           default_language=app.config.get('DEFAULT_LANGUAGE'),
-                           supported_languages=app.config.get('SUPPORTED_LANGUAGE_NAMES'))
+    # Main upload workflow remains on the existing index page.
+    return render_template(
+        'index.html',
+        default_api=app.config.get('DEFAULT_API'),
+        default_language=app.config.get('DEFAULT_LANGUAGE'),
+        supported_languages=app.config.get('SUPPORTED_LANGUAGE_NAMES'),
+    )
+
+# Version/info endpoints
+from app.api.version_info import version_bp
+app.register_blueprint(version_bp, url_prefix='/api')
+
+
+#@app.route('/realtime')
+#def realtime_page():
+#    """Renders the realtime streaming page."""
+#    # Render the mobile-oriented realtime streaming UI.
+#    return render_template(
+#        'realtime.html',
+#        sample_rate=app.config.get('REALTIME_SAMPLE_RATE', 16000),
+#        chunk_ms=app.config.get('REALTIME_CHUNK_MILLIS', 250),
+#        enable_translation=app.config.get('REALTIME_ENABLE_TRANSLATION', False),
+#        enable_tts=app.config.get('REALTIME_ENABLE_TTS', False),
+#        default_voice=app.config.get('REALTIME_DEFAULT_VOICE', 'verse'),
+#        supported_languages=app.config.get('SUPPORTED_LANGUAGE_NAMES', {}),
+#    )
 
 # --- Background task for cleaning up old files ---
 from app.services.file_service import cleanup_old_files

@@ -170,6 +170,25 @@ def get_transcriptions():
         return jsonify({'error': 'Failed to retrieve transcription history.'}), 500
 
 
+@transcriptions_bp.route('/transcriptions/<transcription_id>', methods=['GET'])
+def get_transcription(transcription_id):
+    """API endpoint to get the list of all transcription records."""
+    short_job_id = transcription_id[:8]
+    logging.info(f"[API] /transcription GET endpoint called for ID: {short_job_id}")
+    try:
+        # Fetch all records from DB (model function logs DB access)
+        transcription = transcription_model.get_transcription_by_id(transcription_id)
+        if not transcription:
+             logging.warning(f"[API:JOB:{short_job_id}] Retrieve failed: Transcription not found.")
+             return jsonify({'error': 'Transcription not found'}), 404
+        
+        logging.info(f"[API] Retrieved {len(transcription)} transcription record.")
+        return jsonify(transcription)
+    except Exception as e:
+        logging.exception(f"[API:{short_job_id}] Error fetching transcription data:")
+        return jsonify({'error': 'Failed to retrieve transcription history.'}), 404
+
+
 @transcriptions_bp.route('/transcriptions/<transcription_id>', methods=['DELETE'])
 def delete_transcription(transcription_id):
     """API endpoint to delete a specific transcription record."""

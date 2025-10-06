@@ -6,7 +6,46 @@ import logging
 import json # For handling progress log
 from flask import current_app, g
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Callable
+from app.version import __version__ as APP_VERSION, __build__ as APP_BUILD, version_string
+from app.models.version_patches import apply_patches_between
+
+# --- Cross-platform file locking helpers ---
+try:  # POSIX
+    import fcntl as _fcntl  # type: ignore
+except Exception:  # pragma: no cover - not available on Windows
+    _fcntl = None
+
+try:  # Windows
+    import msvcrt as _msvcrt  # type: ignore
+except Exception:  # pragma: no cover - not available on POSIX
+    _msvcrt = None
+
+def _acquire_file_lock(lock_file) -> Callable[[], None]:
+    """Acquire an exclusive lock on a file in a cross-platform way.
+    Returns a callable that releases the lock when invoked.
+    If platform locking is unavailable, returns a no-op releaser.
+    """
+    # POSIX flock
+    if _fcntl is not None:
+        try:
+            _fcntl.flock(lock_file, _fcntl.LOCK_EX)
+            return lambda: _fcntl.flock(lock_file, _fcntl.LOCK_UN)
+        except Exception:
+            # Fall through to no-op if flock fails unexpectedly
+            logging.debug("[DB] POSIX flock unavailable; continuing without lock.")
+            return lambda: None
+    # Windows file locking
+    if _msvcrt is not None:
+        try:
+            lock_file.seek(0)
+            _msvcrt.locking(lock_file.fileno(), _msvcrt.LK_LOCK, 1)
+            return lambda: (_msvcrt.locking(lock_file.fileno(), _msvcrt.LK_UNLCK, 1))
+        except Exception:
+            logging.debug("[DB] msvcrt locking unavailable; continuing without lock.")
+            return lambda: None
+    # No locking available
+    return lambda: None
 
 # --- Database Connection Handling (using Flask 'g') ---
 
@@ -16,7 +55,7 @@ def get_db():
         db_path = current_app.config['DATABASE']
         try:
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
-            g.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+            g.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES, timeout=30)
             g.db.row_factory = sqlite3.Row
             logging.debug("[DB] Database connection opened.")
         except sqlite3.Error as e:
@@ -45,10 +84,8 @@ def init_db_command():
     
     # Use a lock file to coordinate between processes.
     with open(lock_path, 'w') as lock_file:
+        releaser = _acquire_file_lock(lock_file)
         try:
-            import fcntl
-            fcntl.flock(lock_file, fcntl.LOCK_EX)
-            
             # Check if the 'transcriptions' table already exists.
             init_needed = True
             if os.path.exists(db_path):
@@ -63,10 +100,122 @@ def init_db_command():
                 except Exception as e:
                     logging.error(f"[DB] Error checking existing database schema: {e}")
                     init_needed = True
-            
+
             if not init_needed:
+                # Ensure meta table exists and manage version/build logic.
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    # Ensure app_meta table exists
+                    conn.execute(
+                        '''
+                        CREATE TABLE IF NOT EXISTS app_meta (
+                            key TEXT PRIMARY KEY,
+                            value TEXT NOT NULL,
+                            updated_at TEXT NOT NULL
+                        )
+                        '''
+                    )
+
+                    # Read current stored values
+                    rows = cursor.execute(
+                        "SELECT key, value FROM app_meta WHERE key IN ('app_version','app_build')"
+                    ).fetchall()
+                    meta = {k: v for (k, v) in rows}
+
+                    now_utc_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+
+                    db_version = meta.get('app_version')
+                    db_build = meta.get('app_build')
+
+                    def _ver_tuple(v: str) -> tuple:
+                        try:
+                            return tuple(int(x) for x in v.split('.'))
+                        except Exception:
+                            return tuple()
+
+                    # Case 1: No version and/or build yet — insert fresh values
+                    if not db_version:
+                        cursor.execute(
+                            """
+                            INSERT INTO app_meta (key, value, updated_at) VALUES ('app_version', ?, ?)
+                            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                            """,
+                            (APP_VERSION, now_utc_iso)
+                        )
+                        # Only set build if available (avoid overwriting with empty)
+                        if APP_BUILD:
+                            cursor.execute(
+                                """
+                                INSERT INTO app_meta (key, value, updated_at) VALUES ('app_build', ?, ?)
+                                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                                """,
+                                (APP_BUILD, now_utc_iso)
+                            )
+                        conn.commit()
+                        conn.close()
+                        logging.info(f"[DB] Seeded version/build metadata: version={APP_VERSION}, build={APP_BUILD or 'n/a'}")
+                        return
+
+                    # Case 2: Version equal — update build only if changed and available
+                    if _ver_tuple(APP_VERSION) == _ver_tuple(db_version):
+                        if APP_BUILD and APP_BUILD != (db_build or ''):
+                            cursor.execute(
+                                """
+                                INSERT INTO app_meta (key, value, updated_at) VALUES ('app_build', ?, ?)
+                                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                                """,
+                                (APP_BUILD, now_utc_iso)
+                            )
+                            conn.commit()
+                            logging.info(f"[DB] Updated build metadata for version {APP_VERSION}: build={APP_BUILD}")
+                        conn.close()
+                        return
+
+                    # Case 3: App version greater than DB version — apply patches then set version
+                    if _ver_tuple(APP_VERSION) > _ver_tuple(db_version):
+                        logging.info(f"[DB] Applying DB patches: from {db_version} -> {APP_VERSION}")
+                        try:
+                            apply_patches_between(conn, db_version, APP_VERSION)
+                            # After successful patches, update stored version and build
+                            cursor.execute(
+                                """
+                                INSERT INTO app_meta (key, value, updated_at) VALUES ('app_version', ?, ?)
+                                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                                """,
+                                (APP_VERSION, now_utc_iso)
+                            )
+                            if APP_BUILD:
+                                cursor.execute(
+                                    """
+                                    INSERT INTO app_meta (key, value, updated_at) VALUES ('app_build', ?, ?)
+                                    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                                    """,
+                                    (APP_BUILD, now_utc_iso)
+                                )
+                            conn.commit()
+                            logging.info(f"[DB] DB patched successfully. New version set to {APP_VERSION}")
+                        except Exception as patch_err:
+                            conn.rollback()
+                            logging.error(f"[DB] Error applying DB patches: {patch_err}")
+                            raise
+                        finally:
+                            conn.close()
+                        return
+
+                    # Case 4: App version less than DB version (unexpected) — log and skip
+                    if _ver_tuple(APP_VERSION) < _ver_tuple(db_version):
+                        logging.warning(f"[DB] App version ({APP_VERSION}) is older than DB version ({db_version}). Skipping version changes.")
+                        conn.close()
+                        return
+
+                    # Default: nothing to do
+                    conn.close()
+                    return
+                except Exception as e:
+                    logging.error(f"[DB] Error managing app version metadata: {e}")
                 return
-            
+
             # Proceed with schema creation if needed.
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
@@ -87,6 +236,33 @@ def init_db_command():
                 '''
             )
             logging.info("[DB] 'transcriptions' table verified/created.")
+
+            # Ensure the app_meta table exists and seed version/build info at first init
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS app_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                '''
+            )
+            now_utc_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+            cursor.execute(
+                """
+                INSERT INTO app_meta (key, value, updated_at) VALUES ('app_version', ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                """,
+                (APP_VERSION, now_utc_iso)
+            )
+            if APP_BUILD:
+                cursor.execute(
+                    """
+                    INSERT INTO app_meta (key, value, updated_at) VALUES ('app_build', ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+                    """,
+                    (APP_BUILD, now_utc_iso)
+                )
             conn.commit()
             conn.close()
             logging.info("[DB] Database schema verification/initialization complete.")
@@ -94,7 +270,10 @@ def init_db_command():
             logging.error(f"[DB] Database initialization/migration error: {e}")
             raise
         finally:
-            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            try:
+                releaser()
+            except Exception:
+                pass
 
 # --- CRUD and Job Status Operations ---
 

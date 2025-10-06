@@ -35,7 +35,7 @@
               <div class="file-field input-field">
                 <div class="btn">
                   <span>File</span>
-                  <input type="file" id="audioFile">
+                  <input type="file" id="audioFile" accept="audio/*,.mp3,.m4a,.wav,.ogg,.webm">
                 </div>
                 <div class="file-path-wrapper">
                   <input class="file-path validate" type="text">
@@ -45,6 +45,7 @@
                 <select id="apiSelect">
                   <!-- Reordered Options: AssemblyAI is now last -->
                   <option value="gpt4o">OpenAI GPT4o Transcribe</option>
+                  <option value="gemini">Gemini 2.5 Pro</option>
                   <option value="whisper">OpenAI Whisper</option>
                   <option value="assemblyai">AssemblyAI</option>
                 </select>

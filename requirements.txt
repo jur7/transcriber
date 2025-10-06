@@ -4,6 +4,9 @@ flask
 # flask-cors # Removed as it wasn't used
 assemblyai
 openai
+google-api-core
+google-genai
 python-dotenv
 pydub
 gunicorn # Added for production WSGI server
+

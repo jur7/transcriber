@@ -4,6 +4,7 @@ import os
 import logging
 import time
 from typing import Tuple, Optional, Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI, OpenAIError, APIError, APIConnectionError, RateLimitError
 from app.services import file_service
 from app.config import Config
@@ -11,11 +12,13 @@ from app.config import Config
 # Define a type hint for the progress callback
 ProgressCallback = Optional[Callable[[str, bool], None]] # Message, IsError
 
-class OpenAITranscriptionAPI: # Renamed from original
+class OpenAITranscriptionAPI:
     """
-    Integration with OpenAI Whisper (whisper-1 model).
-    Handles large file splitting and language detection. Reports progress via callback.
+    Integration with OpenAI Whisper (whisper-1) using synchronous requests.
+    Handles large file splitting and parallel chunk transcription with bounded concurrency.
+    Reports progress via callback.
     """
+
     MODEL_NAME = "whisper-1"
     API_NAME = "OpenAI_Whisper" # For logging
 
@@ -56,10 +59,9 @@ class OpenAITranscriptionAPI: # Renamed from original
                    original_filename: Optional[str] = None
                    ) -> Tuple[Optional[str], Optional[str]]:
         """
-        Transcribes the audio file using OpenAI Whisper-1. Handles splitting.
+        Transcribes the audio file using OpenAI Whisper. Handles splitting if needed.
 
-        Returns:
-            A tuple containing (transcription_text, detected_language) or (None, None) on failure.
+        Returns (transcription_text, detected_language) or (None, None) on failure.
         """
         requested_language = language_code
         display_filename = original_filename or os.path.basename(audio_file_path)
@@ -72,151 +74,157 @@ class OpenAITranscriptionAPI: # Renamed from original
         # else:
         #     logging.info(f"{log_prefix} Starting transcription (no callback)...")
 
-        transcription_text = None
-        final_detected_language = None # Track the actual detected/used language
+        transcription_text: Optional[str] = None
+        final_language_used: Optional[str] = None
 
         try:
             # Check file existence before getting size
             if not os.path.exists(audio_file_path):
                  # SIMPLE UI ERROR MESSAGE
                  msg = f"ERROR: Audio file not found at path: {audio_file_path}"
-                 if progress_callback: progress_callback(msg, True)
-                 logging.error(f"{log_prefix} {msg}") # Console log
+                 if progress_callback:
+                    progress_callback(msg, True)
+                 logging.error(f"{log_prefix} {msg}")
                  return None, None
 
             file_size = os.path.getsize(audio_file_path)
-            # Check if splitting is needed (progress message handled by service layer)
-            if file_size > file_service.OPENAI_MAX_FILE_SIZE:
-                # Delegate to splitting method - uses callback for progress
-                logging.info(f"{log_prefix} File size ({file_size / 1024 / 1024:.2f}MB) exceeds limit. Starting chunked transcription.") # Console log
-                # The splitting function will send its own UI messages
-                return self._split_and_transcribe(audio_file_path, requested_language, progress_callback, context_prompt, display_filename)
+            file_length = file_service.get_audio_file_length(audio_file_path)
+
+            # Decide whether to split; length threshold reused from file_service
+            if file_size > file_service.OPENAI_MAX_FILE_SIZE or file_length > file_service.OPENAI_MAX_LENGTH_MS_4O:
+                if file_size > file_service.OPENAI_MAX_FILE_SIZE:
+                    logging.info(f"{log_prefix} File size ({file_size / 1024 / 1024:.2f}MB) exceeds limit. Starting chunked transcription.")                
+                else:
+                    logging.info(f"{log_prefix} File length ({file_length / 1000:.2f}sec) exceeds limit. Starting chunked transcription.")
+                return self._split_and_transcribe(
+                    audio_file_path, requested_language, progress_callback, context_prompt, display_filename
+                )
             else:
                 # Transcribe single file
-                logging.info(f"{log_prefix} File size ({file_size / 1024 / 1024:.2f}MB) within limit. Processing as single file.") # Console log
+                logging.info(f"{log_prefix} File size ({file_size / 1024 / 1024:.2f}MB) within limi. Processing as single file.")
                 abs_path = os.path.abspath(audio_file_path)
                 temp_dir = os.path.dirname(abs_path)
                 if not file_service.validate_file_path(abs_path, temp_dir):
-                     # SIMPLE UI ERROR MESSAGE
                      msg = f"ERROR: Audio file path is not allowed or outside expected directory: {abs_path}"
-                     if progress_callback: progress_callback(msg, True)
-                     logging.error(f"{log_prefix} {msg}") # Console log
+                     if progress_callback:
+                        progress_callback(msg, True)
+                     logging.error(f"{log_prefix} {msg}")
                      raise ValueError(msg)
 
                 with open(abs_path, "rb") as audio_file:
                     api_params = {
                         "model": self.MODEL_NAME,
                         "file": audio_file,
-                        "prompt": context_prompt
+                        "response_format": "text",
+                        "prompt": context_prompt,
                     }
-                    log_lang_param_desc = ""
-                    ui_lang_msg = ""
 
-                    # Determine response format and language parameter
-                    if requested_language == 'auto':
-                        api_params["response_format"] = "verbose_json" # Need this for detected language
-                        log_lang_param_desc = "'auto' (detection requested)"
-                        # SIMPLE UI Message
-                        ui_lang_msg = "Language detection requested."
-                        if progress_callback: progress_callback(ui_lang_msg, False)
+                # Encourage stability when language is specified
+                    if requested_language != "auto":
+                        api_params["temperature"] = 0
+
+                    lang_note = ""
+                    if requested_language == "auto":
+                        lang_note = " (Language: 'auto' requested - implicit detection by model)"
+                        if progress_callback:
+                            progress_callback("Language: 'auto' requested - implicit detection by model.", False)
                     elif requested_language in Config.SUPPORTED_LANGUAGE_CODES:
                         api_params["language"] = requested_language
-                        api_params["response_format"] = "text" # Text is sufficient
-                        log_lang_param_desc = f"'{requested_language}'"
-                        # SIMPLE UI Message
-                        ui_lang_msg = f"Language set to '{requested_language}'."
-                        if progress_callback: progress_callback(ui_lang_msg, False)
                     else:
-                        # Console log
                         logging.warning(f"{log_prefix} Invalid language code '{requested_language}'. Using auto-detection as fallback.")
-                        # SIMPLE UI Message for fallback
-                        ui_lang_msg = f"Invalid language code '{requested_language}'. Using auto-detection as fallback."
-                        if progress_callback: progress_callback(ui_lang_msg, False) # Report as info/warning
-                        # Fallback settings
-                        api_params["response_format"] = "verbose_json"
-                        log_lang_param_desc = "'auto' (fallback detection)"
-                        requested_language = 'auto' # Update effective language
 
-                    # Log the parameters being sent (console only)
-                    log_params = {k: v for k, v in api_params.items() if k != 'file'}
-                    logging.info(f"{log_prefix} Calling API with parameters: {log_params} (Lang: {log_lang_param_desc})")
+                    # Log parameters (excluding the file object)
+                    log_params = {k: v for k, v in api_params.items() if k != "file"}
+                    logging.info(f"{log_prefix} Calling API with parameters: {log_params}{lang_note}")
 
-                    # Report API call via callback - SIMPLE UI MESSAGE
-                    if progress_callback: progress_callback(f"Transcribing with OpenAI {self.MODEL_NAME}...", False)
+                    if progress_callback:
+                        progress_callback(f"Transcribing with OpenAI {self.MODEL_NAME}...", False)
 
                     start_time = time.time()
                     # Console log only
                     logging.info(f"{log_prefix} Calling OpenAI API...")
                     transcript_response = self.client.audio.transcriptions.create(**api_params)
                     duration = time.time() - start_time
-                     # Console log only
+                    # Console log only
                     logging.info(f"{log_prefix} OpenAI API call successful. Duration: {duration:.2f}s")
 
-                    # Process response based on format
                     if api_params["response_format"] == "verbose_json":
                         transcription_text = transcript_response.text
                         final_detected_language = transcript_response.language
                         # Console log only
                         logging.info(f"{log_prefix} Detected language: {final_detected_language}")
-                        # SIMPLE UI Message for detected language
-                        if progress_callback: progress_callback(f"Detected language: {final_detected_language}", False)
-                    else: # response_format was 'text'
-                        transcription_text = transcript_response if isinstance(transcript_response, str) else str(transcript_response)
-                        final_detected_language = requested_language # Language was specified
+                    else:
+                        transcription_text = (
+                            transcript_response if isinstance(transcript_response, str) else str(transcript_response)
+                        )
 
-            # Console log message
-            log_lang_msg = f"Transcription finished. Final language: {final_detected_language}"
+            # Language note and final logging
+            if requested_language == "auto":
+                final_language_used = "en"
+                log_lang_msg = "Transcription finished. Language detected implicitly (logged as 'en' default for 'auto' request)."
+                ui_lang_msg = f"OpenAI {self.MODEL_NAME} transcription finished. Language detected implicitly by model."
+            else:
+                final_language_used = requested_language
+                log_lang_msg = f"Transcription finished. Used requested language: {final_language_used}"
+                ui_lang_msg = (
+                    f"OpenAI {self.MODEL_NAME} transcription finished. Used requested language: {final_language_used}"
+                )
+
             logging.info(f"{log_prefix} {log_lang_msg}")
-            # SIMPLE UI Message for finish
-            ui_finish_msg = f"OpenAI {self.MODEL_NAME} transcription finished. Final language: {final_detected_language}"
-            if progress_callback: progress_callback(ui_finish_msg, False)
-             # Add a final "completed" message for UI consistency
+            if progress_callback: progress_callback(ui_lang_msg, False)
             if progress_callback: progress_callback("Transcription completed.", False)
 
-            return transcription_text, final_detected_language
+            return transcription_text, final_language_used
 
         # --- Exception Handling (Similar to GPT4o, adapted messages) ---
         except FileNotFoundError as fnf_error:
             # SIMPLE UI ERROR MESSAGE
             error_msg = f"ERROR: Audio file disappeared: {fnf_error}"
-            if progress_callback: progress_callback(error_msg, True)
+            if progress_callback:
+                progress_callback(error_msg, True)
             logging.error(f"{log_prefix} {error_msg}") # Console log
             return None, None
         except RateLimitError as rle:
             # SIMPLE UI ERROR MESSAGE
             error_msg = f"ERROR: OpenAI API rate limit exceeded: {rle}. Please try again later."
-            if progress_callback: progress_callback(error_msg, True)
+            if progress_callback:
+                progress_callback(error_msg, True)
             logging.warning(f"{log_prefix} {error_msg}") # Console log
             return None, None
         except APIConnectionError as ace:
             # SIMPLE UI ERROR MESSAGE
             error_msg = f"ERROR: OpenAI API connection error: {ace}. Check network connectivity."
-            if progress_callback: progress_callback(error_msg, True)
+            if progress_callback:
+                progress_callback(error_msg, True)
             logging.error(f"{log_prefix} {error_msg}") # Console log
             return None, None
         except APIError as apie:
             # SIMPLE UI ERROR MESSAGE
             error_msg = f"ERROR: OpenAI API returned an error: {apie}"
-            if progress_callback: progress_callback(error_msg, True)
+            if progress_callback:
+                progress_callback(error_msg, True)
             logging.error(f"{log_prefix} {error_msg}") # Console log
             return None, None
         except OpenAIError as oae:
             # SIMPLE UI ERROR MESSAGE
             error_msg = f"ERROR: OpenAI SDK Error: {oae}"
-            if progress_callback: progress_callback(error_msg, True)
+            if progress_callback:
+                progress_callback(error_msg, True)
             logging.error(f"{log_prefix} {error_msg}") # Console log
             return None, None
         except ValueError as ve:
              # SIMPLE UI ERROR MESSAGE
-             error_msg = f"ERROR: Input Error: {ve}"
-             if progress_callback: progress_callback(error_msg, True)
-             logging.error(f"{log_prefix} {error_msg}") # Console log
-             return None, None
+            error_msg = f"ERROR: Input Error: {ve}"
+            if progress_callback:
+                progress_callback(error_msg, True)
+            logging.error(f"{log_prefix} {error_msg}") # Console log
+            return None, None
         except Exception as e:
              # SIMPLE UI ERROR MESSAGE
             error_msg = f"ERROR: Unexpected error during {self.API_NAME} transcription: {e}"
-            if progress_callback: progress_callback(error_msg, True)
-            logging.exception(f"{log_prefix} Unexpected error detail:") # Console log with traceback
+            if progress_callback:
+                progress_callback(error_msg, True) # Console log
+            logging.exception(f"{log_prefix} Unexpected error detail:")
             return None, None
         # --- End of Exception Handling ---
 
@@ -226,167 +234,154 @@ class OpenAITranscriptionAPI: # Renamed from original
                              context_prompt: str = "",
                              display_filename: Optional[str] = None
                              ) -> Tuple[Optional[str], Optional[str]]:
-        """Handles splitting large files and transcribing chunks for Whisper-1."""
+        """Handles splitting large files and transcribing chunks in parallel."""
         requested_language = language_code
         log_prefix = f"[{self.API_NAME}:{display_filename or os.path.basename(audio_file_path)}]" # Prefix for internal console logs
 
         temp_dir = os.path.dirname(audio_file_path)
-        chunk_files = []
+        chunk_files: list[str] = []
         first_chunk_language = None # Store language from first chunk if 'auto'
-        final_language_used = None # Track final language for return
+        final_language_used: Optional[str] = None
 
         try:
-            # file_service.split_audio_file uses the progress_callback internally for UI messages
             chunk_files = file_service.split_audio_file(audio_file_path, temp_dir, progress_callback)
             if not chunk_files:
                 raise Exception("Audio splitting failed or resulted in no chunks.")
 
-            transcription_texts = []
             total_chunks = len(chunk_files)
-            # Console log only
             logging.info(f"{log_prefix} Starting transcription of {total_chunks} chunks...")
-            # No separate UI message needed here, chunk processing messages will follow
 
-            for idx, chunk_path in enumerate(chunk_files):
-                chunk_num = idx + 1
-                # Construct specific log prefix for console logs
-                chunk_log_prefix = f"{log_prefix}:Chunk{chunk_num}"
+            max_workers = min(total_chunks, max(1, int(getattr(Config, "OPENAI_MAX_CONCURRENCY", 3))))
+            results: list[Optional[str]] = [None] * total_chunks
+            error: Optional[Exception] = None
 
-                # Determine language and format for this chunk
-                current_chunk_lang_param = requested_language
-                response_format = "text" # Default
-                if requested_language == 'auto':
-                    if first_chunk_language:
-                        # Use language from first chunk for consistency
-                        current_chunk_lang_param = self.lang_to_code(first_chunk_language)
-                        response_format = "text"
-                        # Console log only
-                        logging.info(f"{chunk_log_prefix} Using detected language '{first_chunk_language}' from first chunk.")
-                        # SIMPLE UI Message
-                        if progress_callback: progress_callback(f"Using detected language '{first_chunk_language}' for subsequent chunks.", False)
-                    else:
-                        # First chunk, need to detect language
-                        current_chunk_lang_param = 'auto'
-                        response_format = "verbose_json"
-                         # Console log only
-                        logging.info(f"{chunk_log_prefix} First chunk, requesting language detection.")
-                        # SIMPLE UI Message
-                        if progress_callback: progress_callback("First chunk: Requesting language detection.", False)
-                # No need for explicit invalid code check here if transcribe() handles fallback
+            if progress_callback:
+                progress_callback(f"Transcribing {min(max_workers, total_chunks)} chunks in parallel. Already transcribed: 0/{total_chunks}.",False,)
 
-                # Pass current_chunk_lang_param and response_format
-                # The chunk method will send its own UI messages via callback
-                chunk_text, chunk_detected_lang = self._transcribe_single_chunk_with_retry(
-                    chunk_path, chunk_num, total_chunks, current_chunk_lang_param, response_format,
-                    progress_callback, context_prompt, chunk_log_prefix # Pass specific log prefix
-                )
+            chunk_compl = 0
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_index = {}
+                for idx, chunk_path in enumerate(chunk_files):
+                    chunk_num = idx + 1
+                    chunk_log_prefix = f"{log_prefix}:Chunk{chunk_num}"
+                    future = executor.submit(
+                        self._transcribe_single_chunk_with_retry,
+                        chunk_path,
+                        chunk_num,
+                        total_chunks,
+                        requested_language,
+                        progress_callback,
+                        context_prompt,
+                        chunk_log_prefix,
+                    )
+                    future_to_index[future] = idx
 
-                if chunk_text is None:
-                    # Error reported by retry function via callback
-                    raise Exception(f"Failed to transcribe chunk {chunk_num}. Aborting.")
+                for future in as_completed(future_to_index):
+                    idx = future_to_index[future]
+                    chunk_num = idx + 1
+                    try:
+                        chunk_text = future.result()
+                    except Exception as e:
+                        error = e
+                        logging.exception(f"{log_prefix}:Chunk{chunk_num} Unexpected exception during transcription:")
+                        break
+                    if chunk_text is None:
+                        error = Exception(f"Failed to transcribe chunk {chunk_num}.")
+                        break
+                    results[idx] = chunk_text
+                    chunk_compl += 1
+                    if progress_callback:
+                        progress_callback(f"Transcribing {min(max_workers, total_chunks)} chunks in parallel. Already transcribed: {chunk_compl}/{total_chunks}.", False,)
+                    logging.info(f"{log_prefix}:Chunk{chunk_num} Transcription successful.")
 
-                transcription_texts.append(chunk_text)
-                # Console log only
-                logging.info(f"{chunk_log_prefix} Transcription successful.")
+            if error is not None or any(r is None for r in results):
+                raise Exception(str(error) if error else "One or more chunks failed to transcribe.")
 
-                # Store detected language from the first chunk if auto-detecting
-                if requested_language == 'auto' and idx == 0 and chunk_detected_lang:
-                    first_chunk_language = chunk_detected_lang
-                    # Console log only
-                    logging.info(f"{log_prefix} Detected language '{first_chunk_language}' from first chunk.")
-                    # SIMPLE UI Message for detected language
-                    if progress_callback: progress_callback(f"Detected language: {first_chunk_language}", False)
-
-            full_transcription = " ".join(filter(None, transcription_texts))
-            # Console log only
+            full_transcription = " ".join(filter(None, results))
             logging.info(f"{log_prefix} Successfully aggregated transcriptions from {total_chunks} chunks.")
 
-            # Determine final detected language for return value
-            if requested_language == 'auto':
-                final_language_used = first_chunk_language or 'en' # Fallback if detection failed
-                # Console log message
-                log_lang_msg = f"Chunked transcription aggregated. Final language (detected/fallback): {final_language_used}"
-                # SIMPLE UI Message
-                ui_lang_msg = f"Aggregated chunk transcriptions. Final language (detected/fallback): {final_language_used}"
+            if requested_language == "auto":
+                final_language_used = "en"
+                log_lang_msg = "Chunked transcription aggregated. Language detected implicitly (logged as 'en')."
+                ui_lang_msg = "Aggregated chunk transcriptions. Language detected implicitly by model."
             else:
                 final_language_used = requested_language
-                 # Console log message
-                log_lang_msg = f"Chunked transcription aggregated. Used requested language: {final_language_used}"
-                # SIMPLE UI Message
-                ui_lang_msg = f"Aggregated chunk transcriptions. Used requested language: {final_language_used}"
+                log_lang_msg = (
+                    f"Chunked transcription aggregated. Used requested language: {final_language_used}"
+                )
+                ui_lang_msg = (
+                    f"Aggregated chunk transcriptions. Used requested language: {final_language_used}"
+                )
 
-            logging.info(f"{log_prefix} {log_lang_msg}") # Console log
-            # Send aggregation UI message
-            if progress_callback: progress_callback(ui_lang_msg, False)
-            # Add a final "completed" message for UI consistency
-            if progress_callback: progress_callback("Transcription completed.", False)
+            logging.info(f"{log_prefix} {log_lang_msg}")
+            if progress_callback:
+                progress_callback(ui_lang_msg, False)
+                progress_callback("Transcription completed.", False)
 
             return full_transcription, final_language_used
 
         except Exception as e:
-             # SIMPLE UI ERROR MESSAGE
             error_msg = f"ERROR: Error during split and transcribe process: {e}"
-            if progress_callback: progress_callback(error_msg, True)
-            logging.exception(f"{log_prefix} Error detail in _split_and_transcribe:") # Console log with traceback
+            if progress_callback:
+                progress_callback(error_msg, True)
+            logging.exception(f"{log_prefix} Error detail in _split_and_transcribe:")
             return None, None
         finally:
             if chunk_files:
-                # Send SIMPLE UI message for cleanup start
-                if progress_callback: progress_callback("Cleaning up temporary chunk files...", False)
-                removed_count = file_service.remove_files(chunk_files) # remove_files logs specifics to console
-                # Console log only
+                if progress_callback:
+                    progress_callback("Cleaning up temporary chunk files...", False)
+                removed_count = file_service.remove_files(chunk_files)
                 logging.info(f"{log_prefix} Cleaned up {removed_count} temporary chunk file(s).")
-                 # Send SIMPLE UI message for cleanup finish
-                if progress_callback: progress_callback(f"Cleaned up {removed_count} temporary chunk file(s).", False)
+                if progress_callback:
+                    progress_callback(f"Cleaned up {removed_count} temporary chunk file(s).", False)
 
 
-    def _transcribe_single_chunk_with_retry(self, chunk_path: str, idx: int, total_chunks: int,
-                                            language_code: str, response_format: str, # language_code is the param to send
-                                            progress_callback: ProgressCallback = None,
-                                            context_prompt: str = "", log_prefix: str = "", max_retries: int = 3
-                                            ) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Transcribes a single chunk with retry logic using Whisper-1. Reports progress via callback.
-
-        Returns: Tuple (transcription_text, detected_language) or (None, None). detected_language is None if format='text'.
-        """
-        last_error = None
+    def _transcribe_single_chunk_with_retry(
+            self, chunk_path: str, idx: int, total_chunks: int,
+            language_code: str, response_format: str,
+            progress_callback: ProgressCallback = None,
+            context_prompt: str = "", log_prefix: str = "", max_retries: int = 3,
+        ) -> Tuple[Optional[str], Optional[str]]:
+        """Transcribes a single chunk with retry logic using Whisper."""
+        requested_language = language_code
         chunk_base_name = os.path.basename(chunk_path)
-        # Use provided log_prefix or construct one for console logs
         effective_log_prefix = log_prefix or f"[{self.API_NAME}:Chunk{idx}]"
 
-        for attempt in range(max_retries):
-            # Report chunk processing start via callback - SIMPLE UI MESSAGE
+        abs_path = os.path.abspath(chunk_path)
+        temp_dir = os.path.dirname(abs_path)
+        if not file_service.validate_file_path(abs_path, temp_dir):
+            error_detail = (
+                f"ERROR: Chunk file path is not allowed or outside expected directory: {abs_path}"
+            )
             if progress_callback:
-                progress_callback(f"Transcribing chunk {idx}/{total_chunks}", False)
+                progress_callback(error_detail, True)
+            logging.error(f"{effective_log_prefix} {error_detail}")
+            return None
 
+        last_error: Optional[Exception] = None
+        for attempt in range(max_retries):
             try:
-                abs_chunk_path = os.path.abspath(chunk_path)
-                temp_dir = os.path.dirname(abs_chunk_path)
-                if not file_service.validate_file_path(abs_chunk_path, temp_dir):
-                    msg = f"Chunk file path is not allowed: {abs_chunk_path}"
-                    logging.error(f"{effective_log_prefix} {msg}") # Console log
-                    raise ValueError(msg)
-
-                with open(abs_chunk_path, "rb") as audio_file:
+                with open(abs_path, "rb") as audio_file:
                     api_params = {
                         "model": self.MODEL_NAME,
                         "file": audio_file,
-                        "response_format": response_format,
-                        "prompt": context_prompt
+                        "response_format": "text",
+                        "prompt": context_prompt,
                     }
-                    log_lang_param_desc = ""
-                    # Only add language if it's not 'auto'
-                    if language_code != 'auto':
-                        api_params["language"] = language_code
-                        log_lang_param_desc = f"'{language_code}'"
+
+                    if requested_language != "auto":
+                        api_params["temperature"] = 0
+
+                    lang_note = ""
+                    if requested_language == "auto":
+                        lang_note = " (Language: 'auto' requested - implicit detection by model)"
+                    elif requested_language in Config.SUPPORTED_LANGUAGE_CODES:
+                        api_params["language"] = requested_language
                     else:
-                        log_lang_param_desc = "'auto' (detection requested)"
+                        logging.warning(f"{effective_log_prefix} Invalid language code '{requested_language}'. Using auto-detection as fallback.")
 
-
-                    # Log API call parameters internally (console only)
-                    log_params = {k: v for k, v in api_params.items() if k != 'file'}
-                    logging.info(f"{effective_log_prefix} Attempt {attempt+1}: Calling API with parameters: {log_params} (Lang: {log_lang_param_desc})")
+                    log_params = {k: v for k, v in api_params.items() if k != "file"}
+                    logging.info(f"{log_prefix} Calling API with parameters: {log_params}{lang_note}")
 
                     start_time = time.time()
                     # Console log only
@@ -397,18 +392,15 @@ class OpenAITranscriptionAPI: # Renamed from original
                     logging.info(f"{effective_log_prefix} Attempt {attempt+1}: API call successful. Duration: {duration:.2f}s")
 
                     # Process response
-                    text = None
+                    text = None                    
                     detected_lang = None # Language detected by API in this chunk
                     if response_format == "verbose_json":
                         text = response.text
-                        detected_lang = response.language
-                        # Console log only
-                        logging.info(f"{effective_log_prefix} Detected language in chunk: {detected_lang}")
-                        # UI Message for detected language (only if first chunk, handled in _split_and_transcribe)
-                    else: # text format
+#                        detected_lang = response.language
+#                        # Console log only
+#                        logging.info(f"{effective_log_prefix} Detected language in chunk: {detected_lang}")
+                    else:
                         text = response if isinstance(response, str) else str(response)
-                        # detected_lang remains None
-
                 # Success - return text and detected language (if available)
                 # DO NOT send individual chunk success message to UI to reduce noise
                 return (text.strip() if text else ""), detected_lang
@@ -416,36 +408,30 @@ class OpenAITranscriptionAPI: # Renamed from original
             # --- Exception Handling for Retries (Similar to GPT4o) ---
             except RateLimitError as rle:
                 last_error = rle
-                wait_time = 2 ** attempt
-                # SIMPLE UI Message for retry
-                error_detail = f"Rate limit hit on chunk {idx}, attempt {attempt+1}. Retrying in {wait_time}s..."
-                if progress_callback: progress_callback(error_detail, False)
-                # Console log
+                wait_time = 2**attempt
+                # Non-fatal error, retry after delay
+                if progress_callback: progress_callback(f"Rate limit hit on chunk {idx}, attempt {attempt+1}. Retrying in {wait_time}s...",False,)
                 logging.warning(f"{effective_log_prefix} Rate limit hit, attempt {attempt+1}. Retrying in {wait_time}s... ({rle})")
                 time.sleep(wait_time)
             except (APIConnectionError, APIError) as e:
-                 last_error = e
-                 wait_time = 2 ** attempt
-                 # SIMPLE UI Message for retry
-                 error_detail = f"API error on chunk {idx} (Attempt {attempt+1}). Retrying in {wait_time}s..."
-                 if progress_callback: progress_callback(error_detail, False)
-                 # Console log
-                 logging.error(f"{effective_log_prefix} API error on chunk {idx}, attempt {attempt+1}: {e}. Retrying in {wait_time}s...")
-                 time.sleep(wait_time)
+                last_error = e
+                wait_time = 2**attempt
+                # Non-fatal error, retry after delay
+                if progress_callback: progress_callback(f"API error on chunk {idx} (Attempt {attempt+1}). Retrying in {wait_time}s...", False,)
+                logging.error(f"{effective_log_prefix} API error on chunk {idx}, attempt {attempt+1}: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
             except OpenAIError as oae:
                 last_error = oae
                 # SIMPLE UI Message for fatal error
                 error_detail = f"ERROR: OpenAI SDK error on chunk {idx}: {oae}"
                 if progress_callback: progress_callback(error_detail, True)
-                # Console log
                 logging.error(f"{effective_log_prefix} OpenAI SDK error on chunk {idx}, attempt {attempt+1}: {oae}")
                 break
             except ValueError as ve:
                 last_error = ve
-                 # SIMPLE UI Message for fatal error
+                # SIMPLE UI Message for fatal error
                 error_detail = f"ERROR: Input error processing chunk {idx}: {ve}"
                 if progress_callback: progress_callback(error_detail, True)
-                # Console log
                 logging.error(f"{effective_log_prefix} {error_detail}")
                 break
             except FileNotFoundError as fnf_error:
@@ -468,8 +454,9 @@ class OpenAITranscriptionAPI: # Renamed from original
 
         # If loop finishes without returning text
         # SIMPLE UI Message for final failure
-        final_error_msg = f"ERROR: Chunk {idx} ('{chunk_base_name}') failed after {max_retries} attempts. Last error: {last_error}"
-        if progress_callback: progress_callback(final_error_msg, True)
+        final_error_msg = (f"ERROR: Chunk {idx} ('{chunk_base_name}') failed after {max_retries} attempts. Last error: {last_error}")
+        if progress_callback:
+            progress_callback(final_error_msg, True)
         # Console log
         logging.error(f"{effective_log_prefix} Chunk {idx} failed after {max_retries} attempts. Last error: {last_error}")
-        return None, None # Indicate failure for this chunk
+        return None

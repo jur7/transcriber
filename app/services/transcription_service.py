@@ -16,6 +16,7 @@ from app.services import file_service
 from app.services.api_clients.assemblyai import AssemblyAITranscriptionAPI
 from app.services.api_clients.openai_whisper import OpenAITranscriptionAPI
 from app.services.api_clients.openai_gpt4o import OpenAIGPT4oTranscriptionAPI
+from app.services.api_clients.gemini import GeminiTranscriptionAPI
 
 # Import specific API errors if available (example for OpenAI)
 from openai import OpenAIError
@@ -63,6 +64,12 @@ def get_transcription_api(api_choice: str) -> Any:
             if not api_key:
                 raise ValueError("OpenAI API key is not configured.")
             return OpenAIGPT4oTranscriptionAPI(api_key)
+        elif api_choice == 'gemini':
+            # For Google AI provider, GEMINI_API_KEY is required; for Vertex, project/location are required.
+            # The client reads the rest of config internally.
+            api_key = current_app.config.get('GEMINI_API_KEY')
+            # api_key may be None for Vertex provider
+            return GeminiTranscriptionAPI(api_key)
         else:
             message = f"Invalid API choice specified: {api_choice}"
             logging.error(f"[SYSTEM] {message}") # Log as system error if choice is invalid
@@ -98,7 +105,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
                 # if api_choice == 'assemblyai': limit = ASSEMBLYAI_LIMIT
 
                 # Only log splitting if size exceeds limit AND API requires splitting
-                if file_size > limit and api_choice in ('whisper', 'gpt4o'):
+                if file_size > limit and api_choice in ('whisper', 'gpt4o', 'gemini'):
                      # SIMPLE UI MESSAGE
                      _update_progress(job_id, f"Splitting large file: {original_filename}...")
             except OSError as e:
@@ -118,7 +125,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
             # Pass original_filename TO API CLIENTS for their internal logging/progress
             # SIMPLE UI MESSAGE (added before calling transcribe)
             _update_progress(job_id, f"Starting transcription of file: {original_filename}")
-            if api_choice in ('gpt4o', 'whisper'):
+            if api_choice in ('gpt4o', 'whisper', 'gemini'):
                 transcription_text, detected_language = api.transcribe(
                     audio_file_path=temp_filename,
                     language_code=language_code,
