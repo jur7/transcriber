@@ -12,8 +12,8 @@ ALLOWED_EXTENSIONS = {'mp3', 'm4a', 'wav', 'ogg', 'webm'}
 # Extensions that can be directly copied without re-encoding
 #  (handled by ffmpeg segment muxer)
 DIRECT_COPY_EXTENSIONS = "mp3, m4a, wav"
-# Constant for chunk length: 9 minutes in milliseconds
-CHUNK_LENGTH_MS = 9 * 60 * 1000
+# Constant for chunk length: 500 seconds in milliseconds
+CHUNK_LENGTH_MS = 500 * 1000
 # Minimum chunk length: 20 seconds in milliseconds
 CHUNK_MIN_LENGTH_MS = 20 * 1000
 # Parameters for smart chunk splitting
@@ -116,7 +116,7 @@ def get_audio_file_length_slow(file_path: str) -> int:
 def split_audio_file(file_path: str, temp_dir: str,
                      progress_callback: Optional[Callable[[str, bool], None]] = None,
                      chunk_length_ms: int = CHUNK_LENGTH_MS,
-                     chunk_direct_format: str = "mp3,m4a") -> List[str]:
+                     chunk_direct_format: str = "mp3,m4a,webm") -> List[str]:
     """Splits an audio file into chunks, reporting progress via callback."""
     # Extract file extension from file_path
     chunks = []
