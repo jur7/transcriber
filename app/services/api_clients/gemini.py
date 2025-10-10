@@ -77,24 +77,44 @@ class GeminiTranscriptionAPI:
 
         # Initialize client depending on provider
         try:
-            if provider in ("google", "gemini"):
+            if provider in ("google", "gemini", "vertex"):
                 # Prefer explicit key if passed, else from Config
                 use_key = api_key or getattr(Config, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY")
-                if not use_key:
-                    logging.error(f"[{self.API_NAME}] API key is required for Google AI provider but not provided.")
-                    raise ValueError("Gemini API key is required for Google AI provider.")
-                self.client = genai.Client(api_key=use_key)
-                self.provider = "google"
-                logging.info(f"[{self.API_NAME}] Client initialized for Google AI with model {self.MODEL_NAME}.")
-            elif provider == "vertex":
-                project = getattr(Config, "VERTEXAI_PROJECT_ID", None) or os.environ.get("VERTEXAI_PROJECT_ID")
-                location = getattr(Config, "VERTEXAI_LOCATION", None) or os.environ.get("VERTEXAI_LOCATION")
-                if not project or not location:
-                    logging.error(f"[{self.API_NAME}] Vertex configuration missing project/location.")
-                    raise ValueError("Vertex provider requires VERTEXAI_PROJECT_ID and VERTEXAI_LOCATION.")
-                self.client = genai.Client(vertex={"project": project, "location": location})
-                self.provider = "vertex"
-                logging.info(f"[{self.API_NAME}] Client initialized for Vertex AI with model {self.MODEL_NAME}.")
+                # Gemini AI (Google Generative Language API)  
+                if provider in ("google", "gemini"):
+                    # API Key is the only authentification method
+                    if use_key:
+                        self.client = genai.Client(api_key=use_key)
+                        self.provider = "google"
+                        logging.info(f"[{self.API_NAME}] Client initialized for Google AI with model {self.MODEL_NAME}.")
+                    else:
+                        logging.error(f"[{self.API_NAME}] API key is required for Google AI provider but not provided.")
+                        raise ValueError("Gemini API key is required for Google AI provider.")
+
+                # Vertex (Google Cloud Platform) AI, API Key
+                elif provider == "vertex" and use_key:
+                    # For Vertex AI
+                    # API key authentification possible too, the access point is different
+                    self.client = genai.Client(vertexai=True, api_key=use_key)
+                    self.provider = "vertex"
+                    logging.info(f"[{self.API_NAME}] Client initialized for Vertex AI with model {self.MODEL_NAME}.")
+
+                # Vertex (Google Cloud Platform) AI, ADC Auth method
+                elif provider == "vertex" and not use_key:
+                    # Addition initialization way is platform authentification
+                    # In this case only Google Cloud project ID and services location are required
+                    project_id = getattr(Config, "VERTEXAI_PROJECT_ID", None) or os.environ.get("VERTEXAI_PROJECT_ID")
+                    location_code = getattr(Config, "VERTEXAI_LOCATION", None) or os.environ.get("VERTEXAI_LOCATION")
+                    if project_id and location_code:
+                        self.client = genai.Client(vertexai=True, api_key=use_key)
+                        self.provider = "vertex"
+                        
+                    else:
+                        logging.error(f"[{self.API_NAME}] Vertex configuration missing project/location.")
+                        raise ValueError("Vertex provider requires VERTEXAI_PROJECT_ID and VERTEXAI_LOCATION.")
+                else:
+                    logging.error(f"[{self.API_NAME}] Error in Gemini init code, GEMINI_PROVIDER: {provider}")
+                    raise ValueError(f"Wrong Gemini init, GEMINI_PROVIDER: {provider}")
             else:
                 logging.error(f"[{self.API_NAME}] Unknown GEMINI_PROVIDER: {provider}")
                 raise ValueError(f"Invalid GEMINI_PROVIDER: {provider}")
