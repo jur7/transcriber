@@ -43,10 +43,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Basic file validation
     if (!file) {
-      M.toast({html: 'Please select an audio file.', classes: 'red'});
+      M.toast({html: 'Please select an audio or video file.', classes: 'red'});
       return;
     }
-
+    // Validate type/extension defensively
+    if (!((file.type && (file.type.indexOf('audio/') === 0 || file.type.indexOf('video/') === 0)) || /\.(mp3|m4a|wav|ogg|webm|mp4|mov|mkv|avi|flv|wmv)$/i.test(file.name || ''))) {
+      M.toast({html: 'Only audio or video files are allowed.', classes: 'red'});
+      return;
+    }
     // Update progress display placeholders
     document.getElementById('progressFile').textContent = file.name;
     document.getElementById('progressService').textContent = apiNameMap[apiChoice] || apiChoice;
@@ -533,6 +537,7 @@ function pollProgress(jobId) {
                   else if (lowerMessage.includes("split")) icon = "call_split";
                   // USE 'layers' ICON FOR CHUNK CREATION
                   else if (lowerMessage.includes("created") && lowerMessage.includes("chunk")) icon = "layers";
+                  else if (lowerMessage.includes("extracting") && lowerMessage.includes("video")) icon = "local_movies";
                   else if (lowerMessage.includes("transcribing chunk")) icon = "record_voice_over"; // Match simplified message
                   else if (lowerMessage.includes("already transcribed")) icon = "record_voice_over"; // Match simplified message
                   else if (lowerMessage.includes("transcribing with")) icon = "record_voice_over"; // Match simplified message

@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import List, Callable, Optional
 from pydub import AudioSegment, exceptions as pydub_exceptions
 
-ALLOWED_EXTENSIONS = {'mp3', 'm4a', 'wav', 'ogg', 'webm'}
+# Allowed audio extensions
+ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'm4a', 'wav', 'ogg', 'webm'}
+# Allowed video extensions (audio will be extracted via ffmpeg)
+ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'webm'}
 # Extensions that can be directly copied without re-encoding
 #  (handled by ffmpeg segment muxer)
 DIRECT_COPY_EXTENSIONS = "mp3, m4a, wav"
@@ -40,15 +43,115 @@ OPENAI_MAX_LENGTH_MS_4O = CHUNK_LENGTH_MS
 # Files to ignore during cleanup
 IGNORE_FILES = {'.DS_Store', '.gitkeep'}
 
+def is_audio_file(filename: str) -> bool:
+    """Returns True if the file looks like supported audio."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_AUDIO_EXTENSIONS
+
+
+def is_video_file(filename: str) -> bool:
+    """Returns True if the file looks like supported video."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
+
+
 def allowed_file(filename: str) -> bool:
-    """Checks if the file extension is allowed."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    """Checks if the file extension is allowed (audio or video)."""
+    if '.' not in filename:
+        return False
+    ext = filename.rsplit('.', 1)[1].lower()
+    return (ext in ALLOWED_AUDIO_EXTENSIONS) or (ext in ALLOWED_VIDEO_EXTENSIONS)
 
 def file_extension(filename: str) -> str:
     """Returns the file extension of a filename."""
     if "."  in filename:
       return filename.rsplit('.', 1)[1]
     return ""
+
+
+def extract_audio_from_video(input_path: str,
+                             output_dir: str,
+                             progress_callback: Optional[Callable[[str, bool], None]] = None,
+                             audio_ext: str = "mp3") -> Optional[str]:
+    """
+    Extracts the audio track from a video file using ffmpeg and saves it
+    as an audio file (default: mp3). Returns the output path on success or
+    None on failure.
+
+    The output filename reuses the input base name with the new extension,
+    written to `output_dir`.
+    """
+    try:
+        base = os.path.splitext(os.path.basename(input_path))[0]
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{base}.{audio_ext}")
+
+        # If an old file exists with the same name, remove it to avoid mixups
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except Exception:
+                pass
+
+        # Common, broadly compatible audio extraction settings
+        # -vn drop video; set stereo 2ch, 44.1kHz for good compatibility
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-y",
+            "-i", input_path,
+            "-vn",
+            "-ac", "2",
+            "-ar", "44100",
+        ]
+        # Choose codec/bitrate by target extension
+        if audio_ext.lower() == "mp3":
+            cmd += ["-c:a", "libmp3lame", "-b:a", "192k"]
+        elif audio_ext.lower() in ("m4a", "aac"):
+            cmd += ["-c:a", "aac", "-b:a", "192k"]
+        elif audio_ext.lower() == "wav":
+            cmd += ["-c:a", "pcm_s16le"]
+        else:
+            # Default to mp3 if unknown target
+            cmd += ["-c:a", "libmp3lame", "-b:a", "192k"]
+            output_path = os.path.join(output_dir, f"{base}.mp3")
+
+        cmd += [output_path]
+
+        if progress_callback:
+            progress_callback("Extracting audio from video...", False)
+        logging.info(f"[SYSTEM] Extracting audio via ffmpeg: '{os.path.basename(input_path)}' -> '{os.path.basename(output_path)}'")
+
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0:
+            err = (result.stderr or "ffmpeg failed").strip()
+            msg = f"ERROR: Audio extraction failed: {err}"
+            if progress_callback:
+                progress_callback(msg, True)
+            logging.error(f"[SYSTEM] {msg}")
+            return None
+
+        if not os.path.exists(output_path):
+            msg = "ERROR: Audio extraction did not produce an output file."
+            if progress_callback:
+                progress_callback(msg, True)
+            logging.error(f"[SYSTEM] {msg}")
+            return None
+
+        if progress_callback:
+            progress_callback(f"Audio extracted: {os.path.basename(output_path)}", False)
+        logging.info(f"[SYSTEM] Audio extracted successfully: '{os.path.basename(output_path)}'")
+        return output_path
+
+    except FileNotFoundError:
+        msg = "ERROR: ffmpeg is not installed or not found in PATH."
+        if progress_callback:
+            progress_callback(msg, True)
+        logging.error(f"[SYSTEM] {msg}")
+        return None
+    except Exception as e:
+        msg = f"ERROR: Unexpected error extracting audio: {e}"
+        if progress_callback:
+            progress_callback(msg, True)
+        logging.exception(f"[SYSTEM] {msg}")
+        return None
 
 
 def ordinal(n: int) -> str:
@@ -122,7 +225,7 @@ def split_audio_file(file_path: str, temp_dir: str,
     chunks = []
     ext = file_extension(file_path).lower()
     # Direct conversion using ffmpeg segment muxer if format matches
-    if ext in ALLOWED_EXTENSIONS and ext in chunk_direct_format:
+    if ext in ALLOWED_AUDIO_EXTENSIONS and ext in chunk_direct_format:
         # s
         total_len_ms = get_audio_file_length(file_path)
         cut_points = []

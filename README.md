@@ -3,7 +3,7 @@
 # Transcriber
 
 ## About This fork
-This fork of the [arnoulddw/transcriber](https://github.com/arnoulddw/transcriber) focuses on the speed and accuracy of transcribing large audio files, such as lecture recordings, business meetings, conference presentations, etc. To take advantage of it, API accounts with a Usage Tier higher than Tier 1 are required. If you're just starting to use the OpenAI API and Gemini API or your audio recordings are short, the original repository is the best choice. Key differences of this fork:
+This fork of the [arnoulddw/transcriber](https://github.com/arnoulddw/transcriber) focuses on the speed and accuracy of transcribing large audio and video files, such as lecture recordings, business meetings, conference presentations, etc. To take advantage of it, API accounts with a Usage Tier higher than Tier 1 are required. If you're just starting to use the OpenAI API and Gemini API or your audio recordings are short, the original repository is the best choice. Key differences of this fork:
 - **Parallel transcription of several audio file segments** Several times faster than sequential processing for long records.
 - **Segmentation of files on pauses in speech** Improves overall transcription quality.
 - **Google Gemini /Vertex AI API option** Can be a good option for noisy recordings.
@@ -18,40 +18,42 @@ This fork of the [arnoulddw/transcriber](https://github.com/arnoulddw/transcribe
 | 01:26:30 lecture       |  m4a   | 79 MB | OpenAI 4o |     05 min 55 sec      |       00 min 48 sec          |    x7.3    |
 
 
-## About Transcriber 
-Transcriber is an audio transcription application with a user-friendly web interface. It allows you to upload audio files and get transcriptions using one of three supported APIs:
+## About Transcriber
+Transcriber is an audio and video transcription application with a user-friendly web interface. It allows you to upload audio or video files and get transcriptions using one of three supported APIs:
 
 - **OpenAI GPT4o Transcribe** (new default)
 - **Google Gemini 2.5 Pro**
-- **OpenAI Whisper**  
+- **OpenAI Whisper**
 - **AssemblyAI**
 
-The application automatically handles large files by splitting them into manageable chunks.
+The application automatically extracts audio from video files (using ffmpeg) and handles large files by splitting them into manageable chunks.
 
 ## Features
 
-- **User-Friendly Web Interface:** A clean HTML/CSS/JavaScript frontend allows you to upload an audio file, select an API and choose a language.
+- **User-Friendly Web Interface:** A clean HTML/CSS/JavaScript frontend allows you to upload audio or video files, select an API and choose a language.
+- **Video File Support:** Automatically extracts audio from video files (MP4, MOV, AVI, MKV, FLV, WMV, WebM) using ffmpeg before transcription.
 - **Multiple Transcription APIs:** Choose from AssemblyAI, OpenAI Whisper or the new OpenAI GPT 4o Transcribe.
-- **Language Selection:** Choose your audio’s language manually or use the automatic language detection for convenience.
+- **Language Selection:** Choose your audio's language manually or use the automatic language detection for convenience.
 - **Context Prompting:** Add context hints for OpenAI APIs to improve transcription of specialized terms (limited to 120 words).
 - **Transcription History:** View, copy, download or delete previously transcribed audio.
 - **Large File Handling:** Audio files larger than 10MB are automatically split into chunks on pauses in speech to overcome API limits.
-- **Parallel File Processing** 
+- **Parallel File Processing**
 - **Docker Deployment:** Simple deployment using Docker Compose or directly via Docker Hub.
 
 ![Screenshot of the Transcriber App](Transcriber-screenshots-2025.png)
 
 ## Usage
 
-1. **Upload Audio File:** Click the "File" button to select an audio file from your computer.
+1. **Upload Audio/Video File:** Click the "File" button to select an audio or video file from your computer. Supported formats:
+   - Audio: MP3, M4A, WAV, OGG, WebM
+   - Video: MP4, MOV, AVI, MKV, FLV, WMV, WebM
 2. **Select API:** Choose either OpenAI 4o transcribe, Google Geminim, AssemblyAI or OpenAI Whisper from the dropdown menu.
 3. **Select Language:** Choose the language of your audio or select "Automatic Detection."
 4. **Add Context (Optional):** For OpenAI APIs, enter a context prompt to improve transcription accuracy (limited to 120 words).
-5. **Transcribe:** Click the "Transcribe" button to start the transcription.
+5. **Transcribe:** Click the "Transcribe" button to start the transcription. Video files will have their audio extracted automatically before transcription.
 6. **View History:** Your transcriptions will appear in the "Transcription History" section, where you can copy, download or delete them.
 
 ## Prerequisites
-
 - **API Keys:**  
   You must have valid API keys for OpenAI and/or Gemini/Vertex and/or AssemblyAI. Sign up at their respective websites to obtain them.
 - **Docker:**  
@@ -78,6 +80,10 @@ The application relies on several environment variables. You can specify these i
 | `GEMINI_MAX_CONCURRENCY` | Maximum allowed parallel threads accessing Gemini/Vertex AI API (for long files processing).          | 1+                                      |   `4`     |
 | `DEFAULT_TRANSCRIBE_API` | The default transcription API used when the application loads.                              | `gpt4o`, `gemini`, `assemblyai` or `whisper`      | `gpt4o`   |
 | `DEFAULT_LANGUAGE`       | The default language for transcription on startup.                                                    | `auto`, `en`, `nl`, `fr`, `es`,`ru`     |  `auto`   |
+
+[1]. [Gemini API in Vertex AI quickstart](https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstart?usertype=apikey)
+[2]. [Generative AI on Vertex AI. Deployments and endpoints](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#available-regions)
+
 
 ## Installation and Deployment
 

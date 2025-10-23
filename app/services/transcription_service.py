@@ -84,10 +84,13 @@ def get_transcription_api(api_choice: str) -> Any:
 def process_transcription(job_id: str, temp_filename: str, language_code: str,
                           api_choice: str, original_filename: str, context_prompt: str = "") -> None:
     """
-    Handles audio transcription in the background, updating status in the database.
+    Handles audio/video transcription in the background, updating status in the database.
+    For video files, extracts audio first, then processes through transcription pipeline.
     Runs within a Flask application context.
     """
     short_job_id = job_id[:8] # For console logging
+    extracted_audio_path = None  # Track extracted audio for cleanup
+
     with app.app_context(): # Ensure access to current_app.config and models
         try:
             # Update status: Processing (model function logs the DB update)
@@ -97,9 +100,30 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
             # SIMPLE UI MESSAGE
             _update_progress(job_id, f"Using API: {api_choice}, Language: {language_code}")
 
+            # Check if this is a video file - if so, extract audio first
+            audio_file_path = temp_filename
+            if file_service.is_video_file(original_filename):
+                _update_progress(job_id, f"Video file detected: {original_filename}")
+                progress_callback = lambda msg, is_err=False: _update_progress(job_id, msg, is_error=is_err)
+
+                # Extract audio from video
+                upload_dir = os.path.dirname(temp_filename)
+                extracted_audio_path = file_service.extract_audio_from_video(
+                    temp_filename,
+                    upload_dir,
+                    progress_callback=progress_callback
+                )
+
+                if not extracted_audio_path:
+                    raise Exception("Failed to extract audio from video file.")
+
+                # Use the extracted audio file for transcription
+                audio_file_path = extracted_audio_path
+                _update_progress(job_id, "Audio extraction completed. Starting transcription...")
+
             # Check for potential splitting (before calling API client)
             try:
-                file_size = os.path.getsize(temp_filename)
+                file_size = os.path.getsize(audio_file_path)
                 limit = file_service.OPENAI_MAX_FILE_SIZE # Default to OpenAI limit
                 # Add specific limits if AssemblyAI differs significantly
                 # if api_choice == 'assemblyai': limit = ASSEMBLYAI_LIMIT
@@ -110,7 +134,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
                      _update_progress(job_id, f"Splitting large file: {original_filename}...")
             except OSError as e:
                  # Use warning level for non-fatal issue during check - SIMPLE UI MESSAGE
-                 _update_progress(job_id, f"Warning: Could not get size of temp file '{os.path.basename(temp_filename)}'.", is_error=False) # Log as warning
+                 _update_progress(job_id, f"Warning: Could not get size of temp file '{os.path.basename(audio_file_path)}'.", is_error=False) # Log as warning
 
 
             # Get API client instance
@@ -127,7 +151,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
             _update_progress(job_id, f"Starting transcription of file: {original_filename}")
             if api_choice in ('gpt4o', 'whisper', 'gemini'):
                 transcription_text, detected_language = api.transcribe(
-                    audio_file_path=temp_filename,
+                    audio_file_path=audio_file_path,
                     language_code=language_code,
                     progress_callback=progress_callback,
                     context_prompt=context_prompt,
@@ -135,7 +159,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
                 )
             else: # AssemblyAI
                 transcription_text, detected_language = api.transcribe(
-                    audio_file_path=temp_filename,
+                    audio_file_path=audio_file_path,
                     language_code=language_code,
                     progress_callback=progress_callback,
                     original_filename=original_filename # Pass original filename
@@ -183,7 +207,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
             # User-friendly message for DB status
             transcription_model.set_job_error(job_id, "An unexpected internal error occurred.")
         finally:
-            # Cleanup temporary file (original upload)
+            # Cleanup temporary file (original upload - could be video or audio)
             if os.path.exists(temp_filename):
                 try:
                     os.remove(temp_filename)
@@ -196,4 +220,18 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
                     logging.error(f"[JOB:{short_job_id}] Error deleting temp upload file '{os.path.basename(temp_filename)}': {ose}")
                     # Add verbose UI warning message - USE BASENAME HERE FOR BREVITY
                     _update_progress(job_id, f"Warning: Failed to delete temporary upload file {os.path.basename(temp_filename)}.", is_error=False) # Log as warning
+
+            # Cleanup extracted audio file (if video was processed)
+            if extracted_audio_path and os.path.exists(extracted_audio_path):
+                try:
+                    os.remove(extracted_audio_path)
+                    # Log cleanup success with job context (console only)
+                    logging.info(f"[JOB:{short_job_id}] Cleaned up extracted audio: {os.path.basename(extracted_audio_path)}")
+                    # Add verbose UI message for cleanup
+                    _update_progress(job_id, f"Deleted extracted audio file: {extracted_audio_path}")
+                except OSError as ose:
+                    # Log cleanup failure as an error with job context (console only)
+                    logging.error(f"[JOB:{short_job_id}] Error deleting extracted audio file '{os.path.basename(extracted_audio_path)}': {ose}")
+                    # Add verbose UI warning message
+                    _update_progress(job_id, f"Warning: Failed to delete extracted audio file {os.path.basename(extracted_audio_path)}.", is_error=False)
             # Note: Chunk files are cleaned up within the API client's _split_and_transcribe method's finally block.
