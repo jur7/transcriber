@@ -21,9 +21,9 @@ This fork of the [arnoulddw/transcriber](https://github.com/arnoulddw/transcribe
 ## About Transcriber
 Transcriber is an audio and video transcription application with a user-friendly web interface. It allows you to upload audio or video files and get transcriptions using one of three supported APIs:
 
-- **OpenAI GPT4o Transcribe** (new default)
+- **OpenAI GPT Transcribe** (default)
 - **Google Gemini 2.5 Pro**
-- **OpenAI Whisper**
+- **OpenAI Whisper** (depricated on OpenAI)
 - **AssemblyAI**
 
 The application automatically extracts audio from video files (using ffmpeg) and handles large files by splitting them into manageable chunks.

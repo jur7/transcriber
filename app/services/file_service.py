@@ -35,7 +35,7 @@ CHUNK_SPLIT_SILENCE_PERCENT_MAX = 25.0  # max % of silence in window to consider
 
 # Maximum file size for OpenAI APIs (25MB) - Moved here
 OPENAI_MAX_FILE_SIZE = 25 * 1024 * 1024
-# Maximum input length = 1500 sec for o4-transcribe AND 2048 output tokens
+# Maximum input length = 1500 sec for gpt-transcribe, 2048 output tokens limit not enforced here
 #OPENAI_MAX_LENGTH_MS_O4 = 1400 * 1000
 OPENAI_MAX_LENGTH_MS_4O = CHUNK_LENGTH_MS
 

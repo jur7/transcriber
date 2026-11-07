@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Map API codes to display names
   var apiNameMap = {
-    'gpt4o': 'OpenAI GPT4o Transcribe',
+    'gpt4o': 'OpenAI GPT Transcribe',
     'assemblyai': 'AssemblyAI',
     'whisper': 'OpenAI Whisper',
     'gemini': 'Gemini 2.5 Pro'
@@ -264,7 +264,7 @@ function addTranscriptionToHistory(transcription, prepend = true) {
 
 
   const apiNameMap = {
-      'gpt4o': 'OpenAI GPT4o Transcribe',
+      'gpt4o': 'OpenAI GPT Transcribe',
       'assemblyai': 'AssemblyAI',
       'whisper': 'OpenAI Whisper'
   };

@@ -5,29 +5,24 @@ import logging
 import time
 from typing import Tuple, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from openai import OpenAI, OpenAIError, APIError, APIConnectionError, RateLimitError
+from openai import OpenAI, OpenAIError, APIError, APIConnectionError, RateLimitError, BadRequestError
 from app.services import file_service
 from app.config import Config
-
-# Raised when a JSON response hits the text token limit and we want to retry
-class OutputTokenLimitExceededError(Exception): pass
-
-OUTPUT_TEXT_TOKENS_LIMIT = 2048
 
 # Define a type hint for the progress callback
 ProgressCallback = Optional[Callable[[str, bool], None]] # Message, IsError
 
 class OpenAIGPT4oTranscriptionAPI:
     """
-    Integration with OpenAI GPT4o Transcribe using synchronous requests.
+    Integration with OpenAI GPT Transcribe using synchronous requests.
     Handles large file splitting. Reports progress via callback.
     Supports parallel chunk transcription with bounded concurrency.
     """
-    MODEL_NAME = "gpt-4o-transcribe" # Use constant for model name
+    MODEL_NAME = "gpt-transcribe" # Use constant for model name
     API_NAME = "OpenAI_GPT4o" # For logging
 
     def __init__(self, api_key: str) -> None:
-        """Initializes the OpenAI GPT-4o API client."""
+        """Initializes the OpenAI GPT Transcribe API client."""
         if not api_key:
             logging.error(f"[{self.API_NAME}] API key is required but not provided.")
             raise ValueError("OpenAI API key is required.")
@@ -47,7 +42,7 @@ class OpenAIGPT4oTranscriptionAPI:
                    original_filename: Optional[str] = None
                    ) -> Tuple[Optional[str], Optional[str]]:
         """
-        Transcribes the audio file using OpenAI GPT-4o Transcribe. Handles splitting.
+        Transcribes the audio file using OpenAI GPT Transcribe. Handles splitting.
 
         Returns:
             A tuple containing (transcription_text, detected_language) or (None, None) on failure.
@@ -309,13 +304,12 @@ class OpenAIGPT4oTranscriptionAPI:
                                             language_code: str, progress_callback: ProgressCallback = None,
                                             context_prompt: str = "", log_prefix: str = "", max_retries: int = 3) -> Optional[str]:
         """
-        Transcribes a single chunk with retry logic using GPT-4o. Reports progress via callback.
+        Transcribes a single chunk with retry logic using GPT Transcribe. Reports progress via callback.
 
         Returns: Transcription text string or None on failure.
         """
         requested_language = language_code
         last_error = None
-        last_output_tokens = None
         chunk_base_name = os.path.basename(chunk_path)
         # Use provided log_prefix or construct one for console logs
         effective_log_prefix = log_prefix or f"[{self.API_NAME}:Chunk{idx}]"
@@ -337,7 +331,7 @@ class OpenAIGPT4oTranscriptionAPI:
                     api_params = {
                         "model": self.MODEL_NAME,
                         "file": audio_file,
-                        # Request JSON to access usage tokens and text
+                        # Request JSON to access audio duration usage and text
                         "response_format": "json",
                     }
 
@@ -345,25 +339,22 @@ class OpenAIGPT4oTranscriptionAPI:
                     if requested_language != 'auto':
                         api_params["temperature"] = 0
 
-                    if last_output_tokens is not None and last_output_tokens >= OUTPUT_TEXT_TOKENS_LIMIT:
-                        api_params["temperature"] = 0.01
-
                     # If user imput non-blank prompt, add it to parameters
                     # Otherwise, results with blank prompt can be worse
                     if context_prompt != "":
                         api_params["prompt"] = context_prompt
-
-                    # Language param omitted
 
                     # Log API call parameters internally (console only)
                     lang_note = ""
                     if requested_language == 'auto':
                         lang_note = " (Lang: 'auto' requested - implicit detection)"
                     elif requested_language in Config.SUPPORTED_LANGUAGE_CODES:
-                        api_params["language"] = requested_language
+                        api_params["extra_body"] = {
+                            "languages": [requested_language]
+                        }
                         ui_lang_msg = f"Language set to '{requested_language}'."
  #                       if progress_callback: progress_callback(ui_lang_msg, False)
-                        logging.info(f"{log_prefix} anguage set to '{requested_language}'. Using auto-detection as fallback.")
+                        logging.info(f"{log_prefix} Language hint set to '{requested_language}'.")
                     else:
                         # Console log
                         logging.warning(f"{log_prefix} Invalid language code '{requested_language}'. Using auto-detection as fallback.")
@@ -381,31 +372,21 @@ class OpenAIGPT4oTranscriptionAPI:
                     response = self.client.audio.transcriptions.create(**api_params)
                     duration = time.time() - start_time
 
-                    # Parse JSON response for text and usage tokens
-                    text = None
-                    output_tokens = None
-                    try:
-                        # openai.types.audio.transcription.Transcription has .text and optional .usage
-                        if hasattr(response, "text"):
-                            text = getattr(response, "text", None)
-                        # usage can be tokens or duration; check for token usage
-                        usage = getattr(response, "usage", None)
-                        if usage is not None and getattr(usage, "type", None) == "tokens":
-                            output_tokens = getattr(usage, "output_tokens", None)
-                    except Exception as parse_err:
-                        logging.warning(f"{effective_log_prefix} Could not parse JSON response fields: {parse_err}")
-
-                    # Console log only
-                    if output_tokens is not None:
-                        last_output_tokens = output_tokens
-                        logging.info(f"{effective_log_prefix} Attempt {attempt+1}: API call successful. Duration: {duration:.2f}s. Output tokens: {output_tokens}")
-                        # If token cap reached and we have retries left, raise to trigger a retry
-                        if output_tokens >= OUTPUT_TEXT_TOKENS_LIMIT and attempt < max_retries - 1:
-                            raise OutputTokenLimitExceededError(f"Output tokens {output_tokens} >= limit {OUTPUT_TEXT_TOKENS_LIMIT}")
-                        if output_tokens >= OUTPUT_TEXT_TOKENS_LIMIT:
-                            logging.warning(f"{effective_log_prefix} Output tokens {output_tokens} reached or exceeded limit {OUTPUT_TEXT_TOKENS_LIMIT}. Result may be truncated.")
-                    else:
-                        logging.info(f"{effective_log_prefix} Attempt {attempt+1}: API call successful. Duration: {duration:.2f}s")
+                    text = response.text
+                    usage = getattr(response, "usage", None)
+                    audio_seconds = (
+                        getattr(usage, "seconds", None)
+                        if getattr(usage, "type", None) == "duration"
+                        else None
+                    )
+                    logging.info(
+                        "%s Attempt %s: API call successful. "
+                        "Request time: %.2fs. Audio usage: %s seconds",
+                        effective_log_prefix,
+                        attempt + 1,
+                        duration,
+                        audio_seconds,
+                    )
                 # Success
                 # DO NOT send individual chunk success message to UI to reduce noise
                 return text.strip() if text else "" # Return empty string for empty transcript
@@ -420,6 +401,12 @@ class OpenAIGPT4oTranscriptionAPI:
                 # Console log
                 logging.warning(f"{effective_log_prefix} Rate limit hit, attempt {attempt+1}. Retrying in {wait_time}s... ({rle})")
                 time.sleep(wait_time)
+            except BadRequestError as e:
+                error_detail = f"ERROR: OpenAI rejected chunk {idx}: {e}"
+                logging.error("%s %s", effective_log_prefix, error_detail)
+                if progress_callback:
+                    progress_callback(error_detail, True)
+                return None
             except (APIConnectionError, APIError) as e:
                  last_error = e
                  wait_time = 2 ** attempt
@@ -429,15 +416,6 @@ class OpenAIGPT4oTranscriptionAPI:
                  # Console log
                  logging.error(f"{effective_log_prefix} API error on chunk {idx}, attempt {attempt+1}: {e}. Retrying in {wait_time}s...")
                  time.sleep(wait_time)
-            except OutputTokenLimitExceededError as tle:
-                last_error = tle
-                wait_time = 2 ** attempt
-                # SIMPLE UI Message for retry
-                error_detail = (f"Output token limit reached on chunk {idx}, attempt {attempt+1}. Retrying in {wait_time}s...")
-                if progress_callback: progress_callback(error_detail, False)
-                # Console log
-                logging.warning(f"{effective_log_prefix} Output tokens limit reached (attempt {attempt+1}). Retrying in {wait_time}s... ({tle})")
-                time.sleep(wait_time)
             except OpenAIError as oae:
                 last_error = oae
                 # SIMPLE UI Message for fatal error

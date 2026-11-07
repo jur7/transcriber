@@ -44,7 +44,7 @@
               <div class="input-field">
                 <select id="apiSelect">
                   <!-- Reordered Options: AssemblyAI is now last -->
-                  <option value="gpt4o">OpenAI GPT4o Transcribe</option>
+                  <option value="gpt4o">OpenAI GPT Transcribe</option>
                   <option value="gemini">Gemini 2.5 Pro</option>
                   <option value="whisper">OpenAI Whisper</option>
                   <option value="assemblyai">AssemblyAI</option>
@@ -114,7 +114,10 @@
           // Initialize API Select and set default
           if (apiSelectElem) {
               // Set the value *before* initializing Materialize select
-              apiSelectElem.value = defaultApi;
+              var hasDefaultApi = Array.from(apiSelectElem.options).some(function(option) {
+                  return option.value === defaultApi;
+              });
+              apiSelectElem.value = hasDefaultApi ? defaultApi : 'gpt4o';
               M.FormSelect.init(apiSelectElem);
               // Trigger change event *after* initialization to ensure UI updates (like context prompt visibility)
               apiSelectElem.dispatchEvent(new Event('change'));
