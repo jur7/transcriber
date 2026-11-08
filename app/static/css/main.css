@@ -55,6 +55,22 @@ nav {
     background-color: #1565c0 !important;
 }
 
+.btn.dismiss-error-btn {
+    background-color: #b71c1c !important;
+    color: #fff;
+    margin-top: 12px;
+}
+
+.btn.dismiss-error-btn:hover,
+.btn.dismiss-error-btn:focus {
+    background-color: #8e1515 !important;
+}
+
+.btn.dismiss-error-btn:focus-visible {
+    outline: 2px solid #8e1515;
+    outline-offset: 3px;
+}
+
 .btn i.material-icons {
     line-height: inherit; /* Better icon alignment */
     margin-left: 8px; /* Space between text and icon */
@@ -122,7 +138,7 @@ nav {
 
 
 /* Progress/Status Box */
-#progressContainer {
+#progressContainer, .transcription-progress-card {
     margin-top: 1.5rem; /* More space above status box */
     padding: 15px;
     border-left: 5px solid #00796b; /* Teal border */
@@ -133,17 +149,17 @@ nav {
     font-size: 1.2rem;
 }
 /* Reduce spacing in status box */
-#progressContainer p {
+#progressContainer p, .transcription-progress-card p {
     margin: 0.2rem 0; /* Reduced top/bottom margin */
     line-height: 1.4; /* Adjust line height if needed */
 }
-#progressActivity {
+#progressActivity, .transcription-activity {
     font-weight: 500;
     display: flex; /* Align icon and text */
     align-items: center;
     margin-top: 0.5rem; /* Add slight space above activity line */
 }
-#progressActivity i.material-icons {
+#progressActivity i.material-icons, .transcription-activity i.material-icons {
     margin-right: 8px; /* Space between icon and text */
 }
 
@@ -289,4 +305,38 @@ nav {
          font-size: 20px;
      }
 
+}.rt-transcript {
+    min-height: 140px;
+    background-color: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 12px;
+    white-space: pre-wrap;
+    overflow-y: auto;
+}
+
+.rt-log {
+    max-height: 200px;
+    background-color: #212121;
+    color: #e0e0e0;
+    padding: 12px;
+    border-radius: 6px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+}
+
+#rtStatus {
+    background-color: #bdbdbd;
+    color: #212121;
+    font-weight: 500;
+}
+
+#rtStatus.active {
+    background-color: #4caf50;
+    color: #ffffff;
+}
+
+#rtStatus.error {
+    background-color: #e53935;
+    color: #ffffff;
 }

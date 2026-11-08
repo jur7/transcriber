@@ -2,8 +2,8 @@
 
 import os
 import uuid
-import threading
 import logging
+import sqlite3
 import json # For parsing progress log from DB
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
@@ -56,30 +56,31 @@ def transcribe_audio():
     context_prompt = request.form.get('context_prompt', '')
 
     try:
-        # Create initial job record in the database (model function logs DB action)
-        transcription_model.create_transcription_job(
-            job_id=job_id,
-            filename=original_filename,
-            api_used=api_choice
-        )
-        logging.info(f"[JOB:{short_job_id}] Created job record for '{original_filename}'")
-
-        # Start the background processing thread
-        thread = threading.Thread(
-            target=transcription_service.process_transcription,
-            args=(job_id, temp_filename, language_code, api_choice, original_filename, context_prompt),
-            daemon=True # Allows app to exit even if threads are running
-        )
-        thread.start()
-        # Log thread start, service layer will log actual processing start
-        logging.info(f"[JOB:{short_job_id}] Background transcription thread started.")
+        # Commit the job and queue entry together so startup recovery cannot
+        # mistake an upload being submitted by another worker for an orphan.
+        queue = current_app.extensions['transcription_queue']
+        with queue.connection() as db:
+            db.row_factory = sqlite3.Row
+            transcription_model.create_transcription_job(
+                job_id=job_id,
+                filename=original_filename,
+                api_used=api_choice,
+                connection=db,
+            )
+            transcription_model.update_job_progress(job_id, 'Uploaded. Queued for transcription.', connection=db)
+            queue.enqueue(
+                job_id, temp_filename, language_code, api_choice, original_filename, context_prompt,
+                connection=db,
+            )
+        logging.info(f"[JOB:{short_job_id}] Added to transcription queue.")
 
         # Return job ID to the client for polling
-        return jsonify({'job_id': job_id, 'message': 'Transcription job started successfully.'}), 202 # Accepted
+        return jsonify({'job_id': job_id, 'message': 'File uploaded and queued.'}), 202
 
     except Exception as e:
         # Log error during job initiation phase
         logging.exception(f"[API:JOB:{short_job_id}] Error initiating transcription job: {e}")
+        transcription_model.set_job_error(job_id, 'Failed to queue transcription.')
         # Attempt to clean up saved file if job creation failed
         if os.path.exists(temp_filename):
             try:
@@ -215,6 +216,8 @@ def clear_transcriptions():
     """API endpoint to delete all transcription records."""
     logging.info("[API] /transcriptions/clear DELETE endpoint called")
     try:
+        if current_app.extensions['transcription_queue'].job_ids():
+            return jsonify({'error': 'Wait for queued transcriptions to finish before clearing history.'}), 409
         transcription_model.clear_transcriptions() # Model logs DB action
         logging.info("[API] All transcriptions cleared successfully.")
         return jsonify({'message': 'All transcriptions cleared'})

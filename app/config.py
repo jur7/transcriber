@@ -2,11 +2,13 @@
 
 import os
 from dotenv import load_dotenv
+# Load environment variables from a .env file if present at the project root
 load_dotenv()
 
 class Config:
     ASSEMBLYAI_API_KEY = os.environ.get('ASSEMBLYAI_API_KEY')
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+    XAI_API_KEY = os.environ.get('XAI_API_KEY')
     DEFAULT_API = os.environ.get('DEFAULT_TRANSCRIBE_API', 'gpt4o')
     # Gemini / Vertex settings
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
@@ -14,7 +16,7 @@ class Config:
     GEMINI_PROVIDER = os.environ.get('GEMINI_PROVIDER', 'google')
     VERTEXAI_PROJECT_ID = os.environ.get('VERTEXAI_PROJECT_ID')
     VERTEXAI_LOCATION = os.environ.get('VERTEXAI_LOCATION')
-    GEMINI_MODEL_NAME = os.environ.get('GEMINI_MODEL_NAME', 'gemini-2.5-pro')
+    GEMINI_MODEL_NAME = os.environ.get('GEMINI_MODEL_NAME', 'gemini-3.5-transcribe')
     # Default language for transcription (e.g. 'en' or 'auto' for auto-detect)  
     DEFAULT_LANGUAGE = os.environ.get('DEFAULT_LANGUAGE', 'auto')
     # Supported language codes (comma‐separated in the env or defaults to en,nl,fr,es)
@@ -37,9 +39,15 @@ class Config:
     # Max concurrent chunk transcriptions for OpenAI calls
     OPENAI_MAX_CONCURRENCY = int(os.environ.get('OPENAI_MAX_CONCURRENCY', '4'))
     # Max concurrency for Gemini (defaults to same as OpenAI if not set)
-    GEMINI_MAX_CONCURRENCY = int(os.environ.get('GEMINI_MAX_CONCURRENCY', OPENAI_MAX_CONCURRENCY if 'OPENAI_MAX_CONCURRENCY' in os.environ else '3'))
+    GEMINI_MAX_CONCURRENCY = int(os.environ.get('GEMINI_MAX_CONCURRENCY', '4'))
+    GROK_MAX_CONCURRENCY = int(os.environ.get('GROK_MAX_CONCURRENCY', '4'))
+    # Prefer HTTPS when generating external URLs
 
-
+#    PREFERRED_URL_SCHEME = 'https'
+#    # Secure cookies when served over HTTPS
+#    SESSION_COOKIE_SECURE = True
+#    REMEMBER_COOKIE_SECURE = True
+#    SESSION_COOKIE_SAMESITE = 'Lax'
 
     # --- Realtime configuration ---
     # Model IDs used when the websocket proxy opens upstream realtime sessions.

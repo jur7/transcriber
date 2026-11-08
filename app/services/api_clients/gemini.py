@@ -1,6 +1,7 @@
 # app/services/api_clients/gemini.py
 
 import os
+import json
 import logging
 import time
 from typing import Tuple, Optional, Callable
@@ -61,18 +62,19 @@ def _guess_mime_type(file_path: str) -> str:
 
 class GeminiTranscriptionAPI:
     """
-    Integration with Google Gemini 2.5 Pro using google.genai.
+    Integration with Google Gemini 3.5 Transcribe using google.genai.
     Mirrors the structure and behavior of OpenAIGPT4oTranscriptionAPI:
     - Handles large file splitting and parallel chunk transcription.
     - Reports progress via callback with the same simple UI messages.
     - Uses inline audio bytes (no separate upload step).
     """
 
-    MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "gemini-2.5-pro")
-    API_NAME = "Gemini_2.5_Pro"
+    MODEL_NAME = Config.GEMINI_MODEL_NAME
+    API_NAME = "Gemini"
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         """Initializes the Gemini API client for either Google AI or Vertex AI."""
+        self.MODEL_NAME = Config.GEMINI_MODEL_NAME
         provider = (getattr(Config, "GEMINI_PROVIDER", "google") or "google").strip().lower()
 
         # Initialize client depending on provider
@@ -316,6 +318,8 @@ class GeminiTranscriptionAPI:
                 raise Exception(str(error) if error else "One or more chunks failed to transcribe.")
 
             full_transcription = " ".join(filter(None, results))
+            if not full_transcription.strip():
+                raise ValueError("Gemini returned no transcription text for any audio chunk.")
             logging.info(f"{log_prefix} Successfully aggregated transcriptions from {total_chunks} chunks.")
 
             if requested_language == "auto":
@@ -393,22 +397,79 @@ class GeminiTranscriptionAPI:
                         f"The expected language is '{requested_language}'. Do not translate. If audio is in other language, transcribe verbatim."
                     )
 
-                contents = [
-                    "\n".join(instructions),
-                    genai_types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                ]
+                audio_part = genai_types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+                api_params = {"model": self.MODEL_NAME}
+                if self.MODEL_NAME == "gemini-3.5-transcribe":
+                    # Dedicated ASR accepts audio and transcription settings, not instructions.
+                    if context_prompt.strip():
+                        raise ValueError("Gemini 3.5 Transcribe does not support free-form context prompts.")
+                    language_codes = []
+                    if requested_language and requested_language != "auto":
+                        locales = {'en': 'en-US', 'nl': 'nl-NL', 'fr': 'fr-FR', 'es': 'es-ES', 'ru': 'ru-RU'}
+                        language_codes = [locales.get(requested_language, requested_language)]
+                    api_params["contents"] = [audio_part]
+                    api_params["config"] = genai_types.GenerateContentConfig(
+                        response_modalities=["TEXT"],
+                        # Google AI returns audioTranscription parts that older
+                        # SDKs discard. Preserve the raw response for this model.
+                        should_return_http_response=self.provider == "google",
+                        # SDK 1.41 supports extra_body but does not yet model these
+                        # transcription fields. Send the documented REST shape directly.
+                        http_options=genai_types.HttpOptions(
+                            extra_body={
+                                "generationConfig": {
+                                    "audioTranscriptionConfig": {"languageCodes": language_codes},
+                                },
+                            },
+                        ),
+                    )
+                else:
+                    # Preserve support for general-purpose models selected through the environment.
+                    api_params["contents"] = ["\n".join(instructions), audio_part]
 
                 # Log the call (console only)
                 if requested_language == "auto": lang_note = " (Lang: 'auto' requested - implicit detection)"  
                 else: lang_note = f" (Lang: '{requested_language}')"
                 logging.info(f"{effective_log_prefix} Attempt {attempt+1}: Calling Gemini API...{lang_note}")
                 start_time = time.time()
-                response = self.client.models.generate_content(model=self.MODEL_NAME, contents=contents)
+                response = self.client.models.generate_content(**api_params)
                 duration = time.time() - start_time
 
-                text = getattr(response, "text", None)
+                if self.MODEL_NAME == "gemini-3.5-transcribe" and self.provider == "google":
+                    payload = json.loads(response.sdk_http_response.body or '{}')
+                    candidates = payload.get('candidates') or []
+                    completed_normally = bool(
+                        candidates and candidates[0].get('finishReason') == 'STOP'
+                        and not (payload.get('promptFeedback') or {}).get('blockReason')
+                    )
+                    parts = ((candidates[0].get('content') or {}).get('parts') or []) if candidates else []
+                    segments = []
+                    for part in parts:
+                        if part.get('thought'):
+                            continue
+                        segment = (part.get('audioTranscription') or {}).get('text') or part.get('text')
+                        if isinstance(segment, str) and segment.strip():
+                            segments.append(segment.strip())
+                    text = ' '.join(segments)
+                else:
+                    text = getattr(response, "text", None)
+                    candidates = getattr(response, "candidates", None) or []
+                    completed_normally = bool(
+                        candidates and getattr(candidates[0], 'finish_reason', None) == 'STOP'
+                        and not getattr(getattr(response, 'prompt_feedback', None), 'block_reason', None)
+                    )
+                if not text or not text.strip():
+                    # ASR legitimately returns an empty STOP response for silence.
+                    # Keep other chunks; an entirely empty recording still fails.
+                    if self.MODEL_NAME == "gemini-3.5-transcribe" and total_chunks > 1 and completed_normally:
+                        message = f"No speech returned for chunk {idx}/{total_chunks}; continuing."
+                        logging.info(f"{effective_log_prefix} {message}")
+                        if progress_callback:
+                            progress_callback(message, False)
+                        return ""
+                    raise ValueError("Gemini returned no transcription text. The response may be empty or blocked.")
                 logging.info(f"{effective_log_prefix} Attempt {attempt+1}: API call successful. Duration: {duration:.2f}s")
-                return text.strip() if text else ""
+                return text.strip()
 
             # --- Exception Handling for Retries ---
             except ResourceExhausted as rle:
@@ -456,11 +517,11 @@ class GeminiTranscriptionAPI:
             # --- End of Exception Handling for Retries ---
 
         final_error_msg = (
-            f"ERROR: Chunk {idx} ('{chunk_base_name}') failed after {max_retries} attempts. Last error: {last_error}"
+            f"ERROR: Chunk {idx} ('{chunk_base_name}') failed after {attempt + 1} attempts. Last error: {last_error}"
         )
         if progress_callback:
             progress_callback(final_error_msg, True)
         logging.error(
-            f"{effective_log_prefix} Chunk {idx} failed after {max_retries} attempts. Last error: {last_error}"
+            f"{effective_log_prefix} Chunk {idx} failed after {attempt + 1} attempts. Last error: {last_error}"
         )
         return None

@@ -277,7 +277,7 @@ def init_db_command():
 
 # --- CRUD and Job Status Operations ---
 
-def create_transcription_job(job_id: str, filename: str, api_used: str) -> None:
+def create_transcription_job(job_id: str, filename: str, api_used: str, *, connection=None) -> None:
     """Creates an initial record for a transcription job."""
     short_job_id = job_id[:8]
     sql = '''
@@ -287,19 +287,20 @@ def create_transcription_job(job_id: str, filename: str, api_used: str) -> None:
     now_utc_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     initial_log = json.dumps(["Job created."])
     try:
-        db = get_db()
+        db = connection if connection is not None else get_db()
         db.execute(sql, (job_id, filename, api_used, now_utc_iso, 'pending', initial_log, None))
-        db.commit()
+        if connection is None:
+            db.commit()
         logging.info(f"[DB:JOB:{short_job_id}] Created initial job record.")
     except sqlite3.Error as e:
         logging.error(f"[DB:JOB:{short_job_id}] Error creating job record: {e}")
         raise
 
-def update_job_progress(job_id: str, message: str) -> None:
+def update_job_progress(job_id: str, message: str, *, connection=None) -> None:
     """Appends a message to the job's progress log in the database."""
     short_job_id = job_id[:8]
     try:
-        db = get_db()
+        db = connection if connection is not None else get_db()
         cursor = db.cursor()
         cursor.execute("SELECT progress_log FROM transcriptions WHERE id = ?", (job_id,))
         row = cursor.fetchone()
@@ -313,7 +314,8 @@ def update_job_progress(job_id: str, message: str) -> None:
             current_log.append(message)
             new_log_json = json.dumps(current_log)
             cursor.execute("UPDATE transcriptions SET progress_log = ? WHERE id = ?", (new_log_json, job_id))
-            db.commit()
+            if connection is None:
+                db.commit()
         else:
             logging.warning(f"[DB:JOB:{short_job_id}] Attempted to update DB progress for non-existent job.")
     except sqlite3.Error as e:
@@ -418,3 +420,7 @@ def init_app(app):
     # Initialize schema on startup within app context.
     with app.app_context():
         init_db_command()
+        # Always run, including when the existing schema/version needs no patch.
+        # Recovery must not depend on starting the background queue worker.
+        from app.services.job_queue import TranscriptionQueue
+        TranscriptionQueue.initialize_database(app.config['DATABASE'])

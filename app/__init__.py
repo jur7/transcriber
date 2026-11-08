@@ -39,8 +39,24 @@ logging.info("[SYSTEM] Database setup complete.")
 from app.api.transcriptions import transcriptions_bp
 app.register_blueprint(transcriptions_bp, url_prefix='/api')
 
+# Uploaded files are processed serially, independently of the browser connection.
+from app.services.job_queue import TranscriptionQueue
+from app.services.transcription_service import process_transcription
+
+def queue_job_error(job_id, message):
+    with app.app_context():
+        transcription.set_job_error(job_id, message)
+
+transcription_queue = TranscriptionQueue(app.config['DATABASE'], process_transcription, queue_job_error)
+app.extensions['transcription_queue'] = transcription_queue
+threading.Thread(target=transcription_queue.run_forever, daemon=True, name='transcription-queue').start()
+
 from app.api.auth import auth_bp
 app.register_blueprint(auth_bp, url_prefix='/api')
+
+# Version/info endpoints
+#from app.api.version_info import version_bp
+#app.register_blueprint(version_bp, url_prefix='/api')
 
 # Register realtime websocket proxy routes.
 #from app.api import realtime_ws
@@ -94,7 +110,7 @@ def run_cleanup_task():
                 threshold = app.config.get('DELETE_THRESHOLD', 24 * 60 * 60) # Default 24h
                 logging.info(f"[SYSTEM:{worker_pid}] Running periodic cleanup in '{upload_dir}' (threshold: {threshold}s)...")
                 # The cleanup_old_files function will log specifics about deleted files
-                deleted_count = cleanup_old_files(upload_dir, threshold)
+                deleted_count = cleanup_old_files(upload_dir, threshold, transcription_queue.job_ids())
                 logging.info(f"[SYSTEM:{worker_pid}] Cleanup task finished. Deleted {deleted_count} old file(s).")
         except Exception as e:
             # Log exceptions occurring in the cleanup loop itself

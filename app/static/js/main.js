@@ -13,16 +13,17 @@ document.addEventListener('DOMContentLoaded', function() {
   // Map API codes to display names
   var apiNameMap = {
     'gpt4o': 'OpenAI GPT Transcribe',
+    'grok': 'Grok Voice Transcribe 2.0',
     'assemblyai': 'AssemblyAI',
     'whisper': 'OpenAI Whisper',
-    'gemini': 'Gemini 2.5 Pro'
+    'gemini': 'Gemini 3.5 Transcribe'
   };
 
   // Handle API selection change to show/hide context prompt
   var apiSelect = document.getElementById('apiSelect');
   var contextPromptContainer = document.getElementById('contextPromptContainer');
   apiSelect.addEventListener('change', function() {
-      if (this.value === 'gpt4o' || this.value === 'whisper' || this.value === 'gemini') {
+      if (this.value === 'gpt4o' || this.value === 'whisper') {
           contextPromptContainer.style.display = 'block';
       } else {
           contextPromptContainer.style.display = 'none';
@@ -30,113 +31,50 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   // Trigger change event on load to set initial state
   apiSelect.dispatchEvent(new Event('change'));
+  document.getElementById('audioFile').addEventListener('change', updateTranscribeButton);
+  updateTranscribeButton();
 
 
-  // Handle Transcribe button click
+  // Snapshot each selection so more files can be added while others are processing.
   document.getElementById('transcribeBtn').addEventListener('click', function() {
-    var fileInput = document.getElementById('audioFile');
-    var languageSelect = document.getElementById('languageSelect');
-    var apiSelect = document.getElementById('apiSelect');
-    var file = fileInput.files[0];
-    var languageCode = languageSelect.value;
-    var apiChoice = apiSelect.value;
-
-    // Basic file validation
-    if (!file) {
-      M.toast({html: 'Please select an audio or video file.', classes: 'red'});
+    const fileInput = document.getElementById('audioFile');
+    const files = Array.from(fileInput.files);
+    const languageCode = document.getElementById('languageSelect').value;
+    const apiChoice = document.getElementById('apiSelect').value;
+    if (!files.length) {
+      M.toast({html: 'Please select audio or video files.', classes: 'red'});
       return;
     }
-    // Validate type/extension defensively
-    if (!((file.type && (file.type.indexOf('audio/') === 0 || file.type.indexOf('video/') === 0)) || /\.(mp3|m4a|wav|ogg|webm|mp4|mov|mkv|avi|flv|wmv)$/i.test(file.name || ''))) {
-      M.toast({html: 'Only audio or video files are allowed.', classes: 'red'});
+    if (files.some(file => !/\.(mp3|m4a|wav|ogg|webm|mp4|mov|mkv|avi|flv|wmv)$/i.test(file.name))) {
+      M.toast({html: 'Only supported audio or video files are allowed.', classes: 'red'});
       return;
     }
-    // Update progress display placeholders
-    document.getElementById('progressFile').textContent = file.name;
-    document.getElementById('progressService').textContent = apiNameMap[apiChoice] || apiChoice;
-    // Use SUPPORTED_LANGUAGE_MAP for display name
-    const displayLanguage = (typeof SUPPORTED_LANGUAGE_MAP !== 'undefined' && SUPPORTED_LANGUAGE_MAP[languageCode])
-                           ? SUPPORTED_LANGUAGE_MAP[languageCode]
-                           : languageCode; // Fallback to code
-    document.getElementById('progressLanguage').textContent = displayLanguage;
-
-    document.getElementById('progressActivity').innerHTML =
-      '<i class="material-icons left">hourglass_empty</i> Starting...';
-
-    // Prepare form data
-    var formData = new FormData();
-    formData.append('audio_file', file);
-    formData.append('language_code', languageCode);
-    formData.append('api_choice', apiChoice);
-
-    // Add context prompt if applicable and validate length
-    if (apiChoice === 'gpt4o' || apiChoice === 'whisper') {
-        var contextPrompt = document.getElementById('contextPrompt').value;
-        var words = contextPrompt.match(/\S+/g) || [];
-        if (words.length > 120) {
-            M.toast({html: 'Context prompt exceeds 120 word limit. Please shorten your prompt.', classes: 'red'});
-            // Re-enable button and return if validation fails
-            document.getElementById('transcribeBtn').disabled = false;
-            return;
-        }
-        formData.append('context_prompt', contextPrompt);
+    const contextPrompt = (apiChoice === 'gpt4o' || apiChoice === 'whisper')
+      ? document.getElementById('contextPrompt').value : '';
+    if ((contextPrompt.match(/\S+/g) || []).length > 120) {
+      M.toast({html: 'Context prompt exceeds 120 word limit.', classes: 'red'});
+      return;
     }
-
-    // Update UI for processing state
-    document.querySelector('.progress').style.display = 'block'; // Show indeterminate progress bar
-    document.getElementById('transcribeBtn').disabled = true;
-    document.getElementById('progressContainer').style.display = 'block'; // Show progress details box
-    // Clear previous progress messages shown in UI if any
-    document.getElementById('progressActivity').dataset.lastMessageIndex = -1;
-
-
-    // Make API call to backend
-    fetch('./api/transcribe', {
-      method: 'POST',
-      body: formData
-    })
-    .then(response => {
-      if (!response.ok) {
-        // Try to get error message from response body
-        return response.json().then(errData => {
-          throw new Error(errData.error || `Network response was not ok: ${response.statusText}`);
-        }).catch(() => {
-          // Fallback if response body is not JSON or empty
-          throw new Error(`Network response was not ok: ${response.statusText}`);
-        });
-      }
-      return response.json();
-    })
-    .then(data => {
-      if (data.error) {
-        // Handle specific errors returned by the backend (e.g., too many jobs)
-        M.toast({html: 'Error: ' + data.error, classes: 'red'});
-        document.querySelector('.progress').style.display = 'none';
-        document.getElementById('transcribeBtn').disabled = false;
-        document.getElementById('progressContainer').style.display = 'none'; // Hide progress box on immediate error
-      } else if (data.job_id) {
-        pollProgress(data.job_id); // Start polling if job started successfully
-      } else {
-         // Handle unexpected successful response without job_id
-         throw new Error("Received success response but no Job ID.");
-      }
-    })
-    .catch(error => {
-      // Handle fetch errors or errors thrown from .then blocks
-      console.error('Error starting transcription:', error);
-      document.querySelector('.progress').style.display = 'none';
-      document.getElementById('transcribeBtn').disabled = false;
-      document.getElementById('progressContainer').style.display = 'none'; // Hide progress box on fetch error
-      M.toast({html: 'An error occurred: ' + error.message, classes: 'red'});
+    queueFilesForUpload(files, {
+      apiChoice, languageCode, contextPrompt,
+      serviceName: apiNameMap[apiChoice] || apiChoice,
+      languageDisplay: (typeof SUPPORTED_LANGUAGE_MAP !== 'undefined' && SUPPORTED_LANGUAGE_MAP[languageCode]) || languageCode,
     });
-  }); // End of transcribeBtn click listener
+    fileInput.value = '';
+    document.querySelector('.file-path').value = '';
+    updateTranscribeButton();
+  });
 
   // Handle Clear All button click
   document.getElementById('clearAllBtn').addEventListener('click', function() {
     // --- CONFIRMATION ONLY HERE ---
     if (confirm('Are you sure you want to clear all transcriptions? This cannot be undone.')) {
       fetch('./api/transcriptions/clear', { method: 'DELETE' })
-      .then(response => response.json())
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Unable to clear history.');
+        return data;
+      })
       .then(data => {
         M.toast({html: data.message});
         // Clear history list and destroy tooltips
@@ -151,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function() {
       })
       .catch(error => {
         console.error('Error clearing transcriptions:', error);
-        M.toast({html: 'An error occurred while clearing transcriptions.'});
+        M.toast({html: escapeHtml(error.message), classes: 'red'});
       });
     }
   }); // End of clearAllBtn click listener
@@ -209,6 +147,10 @@ function loadTranscriptions() {
         // Only add completed items during initial load
         if (transcription.status === 'finished' || transcription.status === 'error' || !transcription.status) { // Handle old items without status
              addTranscriptionToHistory(transcription, false); // Append items during initial load
+        } else if (!activeJobCards.has(transcription.id)) {
+             const option = Array.from(document.getElementById('apiSelect').options).find(item => item.value === transcription.api_used);
+             const ui = addProgressCard(transcription.filename, option ? option.textContent : transcription.api_used, transcription.detected_language || 'Not reported yet');
+             pollProgressForCard(transcription.id, ui);
         }
       });
       document.getElementById('clearAllBtn').style.display = 'inline-block'; // Show clear button
@@ -265,6 +207,8 @@ function addTranscriptionToHistory(transcription, prepend = true) {
 
   const apiNameMap = {
       'gpt4o': 'OpenAI GPT Transcribe',
+      'grok': 'Grok Voice Transcribe 2.0',
+      'gemini': 'Gemini 3.5 Transcribe',
       'assemblyai': 'AssemblyAI',
       'whisper': 'OpenAI Whisper'
   };
@@ -488,128 +432,4 @@ function deleteTranscription(transcriptionId, transcriptionItem) {
       console.error('Error deleting transcription:', error);
       M.toast({html: 'An error occurred while deleting the transcription.'});
   });
-}
-
-
-/**
- * Polls the backend for the progress of a specific transcription job.
- * Updates the UI with the latest status message.
- * @param {string} jobId - The ID of the job to poll.
- */
-function pollProgress(jobId) {
-  const progressElement = document.getElementById('progressActivity');
-  // Store the index of the last message shown to avoid repetition
-  let lastMessageIndex = -1; // Use -1 to ensure the first message (index 0) is shown
-  let jobIsFinished = false; // Flag to prevent UI updates after final state
-
-  var interval = setInterval(function() {
-      // If job is marked finished in UI, stop polling (safety check)
-      if (jobIsFinished) {
-          clearInterval(interval);
-          return;
-      }
-
-      fetch('./api/progress/' + jobId)
-      .then(response => {
-          if (!response.ok) {
-              // Handle HTTP errors during polling (like 404 Not Found)
-              throw new Error(`Polling failed: ${response.statusText}`); // Use statusText
-          }
-          return response.json();
-      })
-      .then(jobData => {
-          // NOTE: jobData structure depends on the backend ./api/progress response
-          // Assuming it returns { status: '...', progress: [...], error_message: '...', result: {...} }
-
-          // Process and display new progress messages from the log
-          const progressLog = jobData.progress || []; // Use progress log from DB
-          if (progressLog.length > 0) {
-              // Iterate through messages we haven't shown yet
-              for (let i = lastMessageIndex + 1; i < progressLog.length; i++) {
-                  const message = progressLog[i];
-                  if (!message) continue; // Skip null/empty messages
-
-                  let icon = "info_outline"; // Default icon
-
-                  // Determine icon based on message content (case-insensitive)
-                  const lowerMessage = message.toLowerCase();
-                  if (lowerMessage.includes("silence")) icon = "blur_linear";
-                  else if (lowerMessage.includes("split")) icon = "call_split";
-                  // USE 'layers' ICON FOR CHUNK CREATION
-                  else if (lowerMessage.includes("created") && lowerMessage.includes("chunk")) icon = "layers";
-                  else if (lowerMessage.includes("extracting") && lowerMessage.includes("video")) icon = "local_movies";
-                  else if (lowerMessage.includes("transcribing chunk")) icon = "record_voice_over"; // Match simplified message
-                  else if (lowerMessage.includes("already transcribed")) icon = "record_voice_over"; // Match simplified message
-                  else if (lowerMessage.includes("transcribing with")) icon = "record_voice_over"; // Match simplified message
-                  else if (lowerMessage.includes("calling api")) icon = "cloud_upload";
-                  else if (lowerMessage.includes("aggregat")) icon = "merge_type";
-                  else if (lowerMessage.includes("cleaning up")) icon = "cleaning_services";
-                  else if (lowerMessage.includes("successful") || lowerMessage.includes("completed")) icon = "check_circle"; // Note: We override this later for final success
-                  else if (lowerMessage.includes("error") || lowerMessage.includes("failed")) icon = "error";
-                  else if (lowerMessage.includes("start")) icon = "play_arrow";
-
-                  // Update the UI with the current message only if job not marked finished
-                  if (!jobIsFinished) {
-                     progressElement.innerHTML = `<i class="material-icons left">${icon}</i> ${message}`;
-                  }
-                  console.log("Progress:", message); // Log progress to console as well
-              }
-              // Update the index of the last message shown
-              lastMessageIndex = progressLog.length - 1;
-          }
-
-          // Check if the job is finished based on status field
-          const isFinished = jobData.status === 'finished';
-          const isError = jobData.status === 'error';
-
-          if (isFinished || isError) {
-              jobIsFinished = true; // Set flag to stop UI updates
-              clearInterval(interval); // Stop polling
-              document.getElementById('transcribeBtn').disabled = false; // Re-enable button
-              document.querySelector('.progress').style.display = 'none'; // Hide indeterminate bar
-              // Keep progress container visible for final status/error
-
-              if (isFinished) {
-                  // Set specific success message
-                  progressElement.innerHTML = `<i class="material-icons left green-text">check_circle</i> Transcription completed successfully!`;
-
-                  M.toast({html: 'Transcription completed!', classes: 'green'});
-                  var contextField = document.getElementById('contextPrompt');
-                  if (contextField) {
-                      contextField.value = ""; // Clear context prompt on success
-                      validateContextPrompt(); // Reset validation state
-                  }
-                  // Fetch the full result data (which should be in jobData.result now)
-                  if (jobData.result) {
-                     addTranscriptionToHistory(jobData.result, true); // Prepend the new result
-                  } else {
-                     // If result is missing, maybe reload history?
-                     console.warn("Job finished but result data missing in progress response.");
-                     loadTranscriptions(); // Reload history as fallback
-                  }
-                  // Hide progress box after a short delay on success
-                  setTimeout(() => { document.getElementById('progressContainer').style.display = 'none'; }, 4000);
-
-              } else { // isError
-                  const errorMessage = jobData.error_message || "An unknown error occurred.";
-                  // Display the last progress message before the error if available
-                  const lastProgress = progressLog.length > 0 ? progressLog[progressLog.length - 1] : "(No specific step logged)";
-                  // Show error message clearly
-                  progressElement.innerHTML = `<span class="grey-text">Last step: ${lastProgress}</span><br><i class="material-icons left red-text">error</i> Error: ${errorMessage}`;
-                  M.toast({html: 'Transcription failed: ' + errorMessage, classes: 'red', displayLength: 6000}); // Show error longer
-                  // Keep progress box visible on error
-              }
-          }
-      })
-      .catch(error => {
-          // Handle network errors or issues fetching/parsing progress
-          console.error('Error polling progress:', error);
-          progressElement.innerHTML = `<i class="material-icons left red-text">error</i> Error polling status: ${error.message}`;
-          jobIsFinished = true; // Stop further updates on polling error
-          clearInterval(interval); // Stop polling on error
-          document.getElementById('transcribeBtn').disabled = false; // Re-enable button
-          document.querySelector('.progress').style.display = 'none'; // Hide indeterminate bar
-          // Keep progress container potentially visible to show the polling error
-      });
-  }, 1500); // Poll slightly less frequently (e.g., every 1.5 seconds)
 }

@@ -31,11 +31,11 @@
         <div class="col s12">
           <div class="card">
             <div class="card-content">
-              <span class="card-title">Upload Audio File</span>
+              <span class="card-title">Upload Audio or Video Files</span>
               <div class="file-field input-field">
                 <div class="btn">
-                  <span>File</span>
-                  <input type="file" id="audioFile" accept=".mp3,.m4a,.wav,.ogg,.webm,.mp4,.mov,.mkv,.avi,.flv,.wmv">
+                  <span>Files</span>
+                  <input type="file" id="audioFile" multiple accept=".mp3,.m4a,.wav,.ogg,.webm,.mp4,.mov,.mkv,.avi,.flv,.wmv">
                 </div>
                 <div class="file-path-wrapper">
                   <input class="file-path validate" type="text">
@@ -45,7 +45,8 @@
                 <select id="apiSelect">
                   <!-- Reordered Options: AssemblyAI is now last -->
                   <option value="gpt4o">OpenAI GPT Transcribe</option>
-                  <option value="gemini">Gemini 2.5 Pro</option>
+                  <option value="gemini">Gemini 3.5 Transcribe</option>
+                  <option value="grok">Grok Voice Transcribe 2.0</option>
                   <option value="whisper">OpenAI Whisper</option>
                   <option value="assemblyai">AssemblyAI</option>
                 </select>
@@ -68,19 +69,11 @@
               </div>
 
               <button class="btn waves-effect waves-light" id="transcribeBtn">
-                TRANSCRIBE <i class="material-icons right">send</i>
+                <span id="transcribeBtnLabel">Transcribe</span> <i id="transcribeBtnIcon" class="material-icons right">send</i>
               </button>
-              <div class="progress" style="display: none;">
-                <div class="indeterminate"></div>
-              </div>
-              <div id="progressContainer" class="card-panel teal lighten-5" style="display: none; margin-top: 10px;">
-                <h5 class="teal-text text-darken-4">Transcription Status</h5>
-                <p><strong>File:</strong> <span id="progressFile"></span></p>
-                <p><strong>Service:</strong> <span id="progressService"></span></p>
-                <p><strong>Language:</strong> <span id="progressLanguage"></span></p>
-                <hr>
-                <p><strong>Current Activity:</strong></p>
-                <p id="progressActivity"><i class="material-icons">hourglass_empty</i> Waiting...</p>
+              <div id="activeJobsContainer" style="display: none; margin-top: 10px;">
+                <h5 class="teal-text text-darken-4">Transcription Queue</h5>
+                <div id="activeJobsList"></div>
               </div>
             </div>
           </div>
@@ -103,6 +96,7 @@
     <!-- Materialize & Custom Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/multi.js') }}"></script>
     <script>
       // Initialize Materialize selects and set defaults after DOM is ready
       document.addEventListener('DOMContentLoaded', function() {

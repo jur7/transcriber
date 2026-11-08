@@ -19,11 +19,12 @@ This fork of the [arnoulddw/transcriber](https://github.com/arnoulddw/transcribe
 
 
 ## About Transcriber
-Transcriber is an audio and video transcription application with a user-friendly web interface. It allows you to upload audio or video files and get transcriptions using one of three supported APIs:
+Transcriber is an audio and video transcription application with a user-friendly web interface. It allows you to upload audio or video files and get transcriptions using one of the supported APIs:
 
-- **OpenAI GPT Transcribe** (default)
-- **Google Gemini 2.5 Pro**
-- **OpenAI Whisper** (depricated on OpenAI)
+- **OpenAI GPT Transcribe** (new)
+- **Google Gemini 3.5 Transcribe** (version updated)
+- **Grok Voice Transcribe 2.0** (new)
+- **OpenAI Whisper** (depricated)
 - **AssemblyAI**
 
 The application automatically extracts audio from video files (using ffmpeg) and handles large files by splitting them into manageable chunks.
@@ -32,7 +33,7 @@ The application automatically extracts audio from video files (using ffmpeg) and
 
 - **User-Friendly Web Interface:** A clean HTML/CSS/JavaScript frontend allows you to upload audio or video files, select an API and choose a language.
 - **Video File Support:** Automatically extracts audio from video files (MP4, MOV, AVI, MKV, FLV, WMV, WebM) using ffmpeg before transcription.
-- **Multiple Transcription APIs:** Choose from AssemblyAI, OpenAI Whisper or the new OpenAI GPT 4o Transcribe.
+- **Multiple Transcription APIs:** Choose from AssemblyAI, OpenAI Whisper, OpenAI GPT 4o Transcribe, Gemini, or Grok Voice Transcribe 2.0.
 - **Language Selection:** Choose your audio's language manually or use the automatic language detection for convenience.
 - **Context Prompting:** Add context hints for OpenAI APIs to improve transcription of specialized terms (limited to 120 words).
 - **Transcription History:** View, copy, download or delete previously transcribed audio.
@@ -44,18 +45,26 @@ The application automatically extracts audio from video files (using ffmpeg) and
 
 ## Usage
 
-1. **Upload Audio/Video File:** Click the "File" button to select an audio or video file from your computer. Supported formats:
+1. **Select Audio/Video Files:** Click "Files" to select one or more files from your computer. Supported formats:
    - Audio: MP3, M4A, WAV, OGG, WebM
    - Video: MP4, MOV, AVI, MKV, FLV, WMV, WebM
-2. **Select API:** Choose either OpenAI 4o transcribe, Google Geminim, AssemblyAI or OpenAI Whisper from the dropdown menu.
+2. **Select API:** Choose OpenAI 4o transcribe, Google Gemini, Grok Voice Transcribe 2.0, AssemblyAI or OpenAI Whisper from the dropdown menu.
 3. **Select Language:** Choose the language of your audio or select "Automatic Detection."
 4. **Add Context (Optional):** For OpenAI APIs, enter a context prompt to improve transcription accuracy (limited to 120 words).
-5. **Transcribe:** Click the "Transcribe" button to start the transcription. Video files will have their audio extracted automatically before transcription.
+5. **Transcribe:** Click **Transcribe** to start. The button changes to **Add to queue** when multiple files are selected or work is already in progress. Files upload in selection order and are transcribed one file at a time. You can select and add more files without waiting for transcription to finish. Each file keeps the provider, language, and context selected when it was added. Video files have their audio extracted automatically.
 6. **View History:** Your transcriptions will appear in the "Transcription History" section, where you can copy, download or delete them.
+
+Keep the page open until uploads finish. Uploaded jobs are saved in the server's
+SQLite queue and continue even if you close the page; refreshing restores their
+progress cards. Pending jobs survive server restarts. A file interrupted during
+transcription is marked failed and must be uploaded again. Failed files do not
+block the queue. Parallel chunk processing within each file is unchanged.
+At startup, unfinished records without a queue entry (including records from older
+releases) are marked interrupted and kept in history instead of appearing as active jobs.
 
 ## Prerequisites
 - **API Keys:**  
-  You must have valid API keys for OpenAI and/or Gemini/Vertex and/or AssemblyAI. Sign up at their respective websites to obtain them.
+  You must have a valid API key for your selected provider: OpenAI, Gemini/Vertex, AssemblyAI, or xAI (Grok). Sign up at their respective websites to obtain one.
 - **Docker:**  
   Ensure Docker is installed and running on your machine.
 - **Python 3.9-3.12 (if developing locally):**  
@@ -75,15 +84,43 @@ The application relies on several environment variables. You can specify these i
 | `GEMINI_PROVIDER`        | Gemini provider 'google' for Gemini API, or 'vertex' for Vertex AI.                                   | `google`, `vertex`                      | `google`  |
 | `VERTEXAI_PROJECT_ID`    | Your Google Cloud project id with Vertex AI API enabled.                                              | Your OpenAI API key                     | (none)    |
 | `VERTEXAI_LOCATION`      | Your Google Cloud project location (used for both Gemini and Vertex AI).                              | See supported location on GC        | `us-central1` |
-| `GEMINI_MODEL_NAME`      | Google Gemini model (used for both Gemini and Vertex AI).                                    | See supported models on Google/GCP          |`gemini-2.5-pro`|
+| `GEMINI_MODEL_NAME`      | Google Gemini model (used for both Gemini and Vertex AI).                                    | See supported models on Google/GCP          |`gemini-3.5-transcribe`|
 | `OPENAI_MAX_CONCURRENCY` | Maximum allowed parallel threads accessing OpenAI API (for long files processing).                    | 1+                                      |   `4`     |
 | `GEMINI_MAX_CONCURRENCY` | Maximum allowed parallel threads accessing Gemini/Vertex AI API (for long files processing).          | 1+                                      |   `4`     |
-| `DEFAULT_TRANSCRIBE_API` | The default transcription API used when the application loads.                              | `gpt4o`, `gemini`, `assemblyai` or `whisper`      | `gpt4o`   |
+| `XAI_API_KEY` | Your xAI API key for Grok file transcription. | Your xAI API key | (none) |
+| `GROK_MAX_CONCURRENCY` | Maximum parallel Grok chunk transcriptions. | 1+ | `4` |
+| `DEFAULT_TRANSCRIBE_API` | The default transcription API used when the application loads.                              | `gpt4o`, `gemini`, `grok`, `assemblyai` or `whisper`      | `gpt4o`   |
 | `DEFAULT_LANGUAGE`       | The default language for transcription on startup.                                                    | `auto`, `en`, `nl`, `fr`, `es`,`ru`     |  `auto`   |
 
 [1]. [Gemini API in Vertex AI quickstart](https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstart?usertype=apikey)
 [2]. [Generative AI on Vertex AI. Deployments and endpoints](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#available-regions)
 
+
+### Gemini file transcription
+
+The default model is `gemini-3.5-transcribe`. Set `GEMINI_API_KEY` and restart the
+app. The client supports `google-genai` 1.41.0 and newer, including Vertex API-key
+connections. If `.env` or your deployment sets `GEMINI_MODEL_NAME`, update that
+value to `gemini-3.5-transcribe` too. The client reads the model from `Config`, so
+changing the default in `app/config.py` also works when no environment override is
+set. Docker deployments should rebuild the image.
+
+The client sends audio with transcription configuration and language hints,
+preserving the existing splitting and parallel processing. Free-form context prompts
+are unavailable for this model. See the [Gemini transcription documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-transcribe).
+
+### Grok file transcription
+
+Set `XAI_API_KEY` in `.env`, restart the app, and select **Grok Voice Transcribe 2.0**.
+The client uses the [xAI speech-to-text API](https://docs.x.ai/developers/model-capabilities/audio/speech-to-text)
+with model `grok-voice-transcribe-2.0`. It follows the GPT transcription client's splitting
+policy (over 25 MiB or 500 seconds), parallel processing, progress reporting, and cleanup.
+Automatic detection stores the language returned by xAI; split recordings use the most
+frequent detected chunk language. Free-form context prompts are not supported for Grok.
+This integration covers file uploads, including audio extracted from video.
+
+To make Grok the default, set `DEFAULT_TRANSCRIBE_API=grok`. With Docker Compose,
+also change the existing `DEFAULT_TRANSCRIBE_API=gpt4o` override in `docker-compose.yml`.
 
 ## Installation and Deployment
 
@@ -107,9 +144,11 @@ This is the fastest way to get started.
      -e ASSEMBLYAI_API_KEY="your_assemblyai_api_key" \
      -e OPENAI_API_KEY="your_openai_api_key" \
      -e GEMINI_API_KEY="your_gemini_api_key" \
+     -e XAI_API_KEY="your_xai_api_key" \
      -e DEFAULT_TRANSCRIBE_API="gpt4o" \
      -e OPENAI_MAX_CONCURRENCY=8 \
      -e GEMINI_MAX_CONCURRENCY=8 \
+     -e GROK_MAX_CONCURRENCY=8 \
      -e DEFAULT_LANGUAGE="auto" \
      --name transcriber-app \
      ykharlamov/transcriber-app:latest
@@ -206,12 +245,14 @@ For further customization or local development, use Docker Compose.
    ASSEMBLYAI_API_KEY=your_assemblyai_api_key
    OPENAI_API_KEY=your_openai_api_key
    GEMINI_API_KEY=your_gemini_api_key
+   XAI_API_KEY=your_xai_api_key
    GEMINI_PROVIDER=google  # 'google' for Gemini API, or 'vertex' for Vertex AI
    VERTEXAI_PROJECT_ID=your_gcp_project_id
    VERTEXAI_LOCATION=us-central1
-   GEMINI_MODEL_NAME=gemini-2.5-pro
+   GEMINI_MODEL_NAME=gemini-3.5-transcribe
    OPENAI_MAX_CONCURRENCY=8
    GEMINI_MAX_CONCURRENCY=8
+   GROK_MAX_CONCURRENCY=8
    DEFAULT_TRANSCRIBE_API=gpt4o
    TZ=Your/Timezone
    ```
@@ -244,6 +285,38 @@ For further customization or local development, use Docker Compose.
 - **API Key Issues:** Ensure your API keys are entered correctly and that your AssemblyAI and OpenAI accounts are active.
 - **File Upload Issues:** Verify that your audio file is in a supported format (mp3, mpga, m4a, wav, or webm).
 - **Docker Errors:** Confirm Docker is running properly and that you have the necessary permissions.
+
+
+## Advanced installation #1. HTTPS with Nginx + Certbot
+
+## Advanced installation #1a. HTTPS with Nginx + Certbot. Access via secret link.
+
+## Advanced installation #2. Storing transcription database outside of the Docker container.
+
+You can store transcriptions database and uploads directory outside of the container. This application contains internal database version control and DB structure patching process for this case. When installing a new version of the Docker container, the DB structure will be updated at startup, so user all data will be preserved.
+
+   ```bash
+
+   docker run -d -p 5001:5001 \
+     -e TZ="Your/Timezone" \
+     -e ASSEMBLYAI_API_KEY="your_assemblyai_api_key" \
+     -e OPENAI_API_KEY="your_openai_api_key" \
+     -e GEMINI_API_KEY="your_gemini_api_key" \
+     -e XAI_API_KEY="your_xai_api_key" \
+     -e DEFAULT_TRANSCRIBE_API="gpt4o" \
+     -e OPENAI_MAX_CONCURRENCY=8 \
+     -e GEMINI_MAX_CONCURRENCY=8 \
+     -e GROK_MAX_CONCURRENCY=8 \
+     -e DEFAULT_LANGUAGE="auto" \
+     --name transcriber-app \
+     ykharlamov/transcriber-app:latest
+
+   ```
+
+## Advanced installation #3. HTTPS and pay-as-you-go with Google Cloud.RUN service.
+
+## Advanced installations. Special notes.
+
 
 ## License
 

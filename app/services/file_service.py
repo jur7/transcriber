@@ -407,7 +407,7 @@ def validate_file_path(file_path: str, allowed_dir: str) -> bool:
         return False
 
 
-def cleanup_old_files(directory: str, threshold_seconds: int) -> int:
+def cleanup_old_files(directory: str, threshold_seconds: int, protected_job_ids=()) -> int:
     """
     Cleans up files older than threshold_seconds in the specified directory.
     Logs actions and returns the count of deleted files.
@@ -423,7 +423,7 @@ def cleanup_old_files(directory: str, threshold_seconds: int) -> int:
     try:
         for filename in os.listdir(directory):
             # Skip ignored files
-            if filename in IGNORE_FILES:
+            if filename in IGNORE_FILES or any(filename.startswith(job_id) for job_id in protected_job_ids):
                 logging.debug(f"[SYSTEM] Skipping ignored file: {filename}")
                 continue
 
