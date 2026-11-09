@@ -373,7 +373,8 @@ You can store transcriptions database and uploads directory outside of the conta
 ## What transcription model is the best
 Virtually all major vendors claim their models perform best in tests. However, reality often differs significantly from test conditions. Factors such as recording environments, audio quality, and the languages ​​involved—especially when multiple languages ​​are mixed—mean that comparative benchmarks should serve only as a starting point for evaluation. If transcription quality is a critical factor, it is advisable to select a few models that perform well in tests and then evaluate them using your own specific audio files.  [Artificial Analysis Speech to Text AI Model & Provider Leaderboard](https://artificialanalysis.ai/speech-to-text/non-streaming)
 
-![Screenshot of the list of models (can be expanded with OpenRouter and Google)](TTranscriber-models-screenshots-20261108.png)
+
+![Screenshot of the list of models (can be expanded with OpenRouter and Google)](Transcriber-models-screenshots-20261108.png)
 
 ## License
 
