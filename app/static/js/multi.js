@@ -76,6 +76,7 @@ async function uploadQueuedFiles() {
         const body = new FormData();
         body.append('audio_file', file);
         body.append('api_choice', options.apiChoice);
+        if (options.modelName) body.append('model_name', options.modelName);
         body.append('language_code', options.languageCode);
         body.append('context_prompt', options.contextPrompt);
         const response = await fetch('./api/transcribe', {method: 'POST', body});

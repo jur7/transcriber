@@ -62,7 +62,7 @@ def _guess_mime_type(file_path: str) -> str:
 
 class GeminiTranscriptionAPI:
     """
-    Integration with Google Gemini 3.5 Transcribe using google.genai.
+    Integration with configurable Google Gemini models using google.genai.
     Mirrors the structure and behavior of OpenAIGPT4oTranscriptionAPI:
     - Handles large file splitting and parallel chunk transcription.
     - Reports progress via callback with the same simple UI messages.
@@ -72,9 +72,9 @@ class GeminiTranscriptionAPI:
     MODEL_NAME = Config.GEMINI_MODEL_NAME
     API_NAME = "Gemini"
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None) -> None:
         """Initializes the Gemini API client for either Google AI or Vertex AI."""
-        self.MODEL_NAME = Config.GEMINI_MODEL_NAME
+        self.MODEL_NAME = model_name or Config.GEMINI_MODEL_NAME
         provider = (getattr(Config, "GEMINI_PROVIDER", "google") or "google").strip().lower()
 
         # Initialize client depending on provider
@@ -401,8 +401,6 @@ class GeminiTranscriptionAPI:
                 api_params = {"model": self.MODEL_NAME}
                 if self.MODEL_NAME == "gemini-3.5-transcribe":
                     # Dedicated ASR accepts audio and transcription settings, not instructions.
-                    if context_prompt.strip():
-                        raise ValueError("Gemini 3.5 Transcribe does not support free-form context prompts.")
                     language_codes = []
                     if requested_language and requested_language != "auto":
                         locales = {'en': 'en-US', 'nl': 'nl-NL', 'fr': 'fr-FR', 'es': 'es-ES', 'ru': 'ru-RU'}

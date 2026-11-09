@@ -6,7 +6,9 @@
 This fork of the [arnoulddw/transcriber](https://github.com/arnoulddw/transcriber) focuses on the speed and accuracy of transcribing large audio and video files, such as lecture recordings, business meetings, conference presentations, etc. To take advantage of it, API accounts with a Usage Tier higher than Tier 1 are required. If you're just starting to use the OpenAI API and Gemini API or your audio recordings are short, the original repository is the best choice. Key differences of this fork:
 - **Parallel transcription of several audio file segments** Several times faster than sequential processing for long records.
 - **Segmentation of files on pauses in speech** Improves overall transcription quality.
-- **Google Gemini /Vertex AI API option** Can be a good option for noisy recordings.
+- **Google Gemini /Vertex AI API option** Can be a good option for noisy recordings and lectures.
+- **OpenRouter API option** Choose the best transcription model for the particular recordings.
+- **Grok API option** Can be a good option for noisy recordings.
 - **Configuration support reverse proxy** Can be installed as a personal transcription service on your personal domain behind the nginx with https and a secret access link.
 
 | Source                 | Format | Size  | API       | Original transcriber   | Parallel processing (x10max) | Difference |
@@ -22,9 +24,10 @@ This fork of the [arnoulddw/transcriber](https://github.com/arnoulddw/transcribe
 Transcriber is an audio and video transcription application with a user-friendly web interface. It allows you to upload audio or video files and get transcriptions using one of the supported APIs:
 
 - **OpenAI GPT Transcribe** (new)
-- **Google Gemini 3.5 Transcribe** (version updated)
+- **Google Gemini** (configurable model through Gemini API or Vertex AI)
+- **OpenRouter** (new)
 - **Grok Voice Transcribe 2.0** (new)
-- **OpenAI Whisper** (depricated)
+- **OpenAI Whisper** (depricated on OpenAI)
 - **AssemblyAI**
 
 The application automatically extracts audio from video files (using ffmpeg) and handles large files by splitting them into manageable chunks.
@@ -33,9 +36,9 @@ The application automatically extracts audio from video files (using ffmpeg) and
 
 - **User-Friendly Web Interface:** A clean HTML/CSS/JavaScript frontend allows you to upload audio or video files, select an API and choose a language.
 - **Video File Support:** Automatically extracts audio from video files (MP4, MOV, AVI, MKV, FLV, WMV, WebM) using ffmpeg before transcription.
-- **Multiple Transcription APIs:** Choose from AssemblyAI, OpenAI Whisper, OpenAI GPT 4o Transcribe, Gemini, or Grok Voice Transcribe 2.0.
+- **Multiple Transcription APIs:** Choose from AssemblyAI, OpenAI Whisper, OpenAI GPT Transcribe, Gemini, Grok Voice Transcribe 2.0, or OpenRouter with almost any transcription model available.
 - **Language Selection:** Choose your audio's language manually or use the automatic language detection for convenience.
-- **Context Prompting:** Add context hints for OpenAI APIs to improve transcription of specialized terms (limited to 120 words).
+- **Context Prompting:** Add context hints for OpenAI and general-purpose Gemini models to improve transcription of specialized terms (limited to 120 words). Gemini 3.5 Transcribe ignores context prompts.
 - **Transcription History:** View, copy, download or delete previously transcribed audio.
 - **Large File Handling:** Audio files larger than 10MB are automatically split into chunks on pauses in speech to overcome API limits.
 - **Parallel File Processing**
@@ -48,23 +51,17 @@ The application automatically extracts audio from video files (using ffmpeg) and
 1. **Select Audio/Video Files:** Click "Files" to select one or more files from your computer. Supported formats:
    - Audio: MP3, M4A, WAV, OGG, WebM
    - Video: MP4, MOV, AVI, MKV, FLV, WMV, WebM
-2. **Select API:** Choose OpenAI 4o transcribe, Google Gemini, Grok Voice Transcribe 2.0, AssemblyAI or OpenAI Whisper from the dropdown menu.
+2. **Select API:** Choose OpenAI 4o transcribe, Google Gemini, Grok Voice Transcribe 2.0, OpenRouter, AssemblyAI or OpenAI Whisper from the dropdown menu.
 3. **Select Language:** Choose the language of your audio or select "Automatic Detection."
-4. **Add Context (Optional):** For OpenAI APIs, enter a context prompt to improve transcription accuracy (limited to 120 words).
+4. **Add Context (Optional):** For OpenAI or general-purpose Gemini models, enter a context prompt to improve transcription accuracy (limited to 120 words). The prompt field is hidden for the dedicated Gemini transcription model.
 5. **Transcribe:** Click **Transcribe** to start. The button changes to **Add to queue** when multiple files are selected or work is already in progress. Files upload in selection order and are transcribed one file at a time. You can select and add more files without waiting for transcription to finish. Each file keeps the provider, language, and context selected when it was added. Video files have their audio extracted automatically.
 6. **View History:** Your transcriptions will appear in the "Transcription History" section, where you can copy, download or delete them.
 
-Keep the page open until uploads finish. Uploaded jobs are saved in the server's
-SQLite queue and continue even if you close the page; refreshing restores their
-progress cards. Pending jobs survive server restarts. A file interrupted during
-transcription is marked failed and must be uploaded again. Failed files do not
-block the queue. Parallel chunk processing within each file is unchanged.
-At startup, unfinished records without a queue entry (including records from older
-releases) are marked interrupted and kept in history instead of appearing as active jobs.
+Note: Keep the page open until uploads finish. Once the file is uploaded, all processing takes place on the server; you can close the page and return later to retrieve the results.
 
 ## Prerequisites
 - **API Keys:**  
-  You must have a valid API key for your selected provider: OpenAI, Gemini/Vertex, AssemblyAI, or xAI (Grok). Sign up at their respective websites to obtain one.
+  You must have a valid API key for your selected provider: OpenAI, Gemini/Vertex, AssemblyAI, xAI (Grok), or OpenRouter. Sign up at their respective websites to obtain one.
 - **Docker:**  
   Ensure Docker is installed and running on your machine.
 - **Python 3.9-3.12 (if developing locally):**  
@@ -84,30 +81,64 @@ The application relies on several environment variables. You can specify these i
 | `GEMINI_PROVIDER`        | Gemini provider 'google' for Gemini API, or 'vertex' for Vertex AI.                                   | `google`, `vertex`                      | `google`  |
 | `VERTEXAI_PROJECT_ID`    | Your Google Cloud project id with Vertex AI API enabled.                                              | Your OpenAI API key                     | (none)    |
 | `VERTEXAI_LOCATION`      | Your Google Cloud project location (used for both Gemini and Vertex AI).                              | See supported location on GC        | `us-central1` |
-| `GEMINI_MODEL_NAME`      | Google Gemini model (used for both Gemini and Vertex AI).                                    | See supported models on Google/GCP          |`gemini-3.5-transcribe`|
+| `GEMINI_MODEL_NAME`      | Comma-separated Gemini models (Gemini API or Vertex AI); first is the default.                | See supported models on Google/GCP          |`gemini-pro-latest`|
 | `OPENAI_MAX_CONCURRENCY` | Maximum allowed parallel threads accessing OpenAI API (for long files processing).                    | 1+                                      |   `4`     |
 | `GEMINI_MAX_CONCURRENCY` | Maximum allowed parallel threads accessing Gemini/Vertex AI API (for long files processing).          | 1+                                      |   `4`     |
 | `XAI_API_KEY` | Your xAI API key for Grok file transcription. | Your xAI API key | (none) |
+| `OPENROUTER_API_KEY` | Your OpenRouter API key for file transcription. | Your OpenRouter API key | (none) |
+| `OPENROUTER_MODEL_NAME` | Comma-separated OpenRouter speech-to-text models; first is the default. | OpenRouter STT model IDs | `elevenlabs/scribe-v2` |
+| `OPENROUTER_MAX_CONCURRENCY` | Maximum parallel OpenRouter chunks within a file. | 1+ | `4` |
 | `GROK_MAX_CONCURRENCY` | Maximum parallel Grok chunk transcriptions. | 1+ | `4` |
-| `DEFAULT_TRANSCRIBE_API` | The default transcription API used when the application loads.                              | `gpt4o`, `gemini`, `grok`, `assemblyai` or `whisper`      | `gpt4o`   |
+| `DEFAULT_TRANSCRIBE_API` | The default transcription API used when the application loads.                              | `gpt4o`, `gemini`, `grok`, `openrouter`, `assemblyai` or `whisper`      | `gpt4o`   |
 | `DEFAULT_LANGUAGE`       | The default language for transcription on startup.                                                    | `auto`, `en`, `nl`, `fr`, `es`,`ru`     |  `auto`   |
 
 [1]. [Gemini API in Vertex AI quickstart](https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstart?usertype=apikey)
 [2]. [Generative AI on Vertex AI. Deployments and endpoints](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#available-regions)
 
 
+### Selecting multiple models
+
+Both model settings accept one model or a comma-separated list:
+
+```dotenv
+GEMINI_MODEL_NAME=gemini-pro-latest,gemini-4-argon,gemini-3.5-transcribe
+OPENROUTER_MODEL_NAME=elevenlabs/scribe-v2,microsoft/mai-transcribe-2,mistralai/voxtral-mini-transcribe
+```
+
+Each model appears separately in the existing dropdown, such as **Google Gemini
+(gemini-pro-latest)** or **OpenRouter (elevenlabs/scribe-v2)**. Spaces and empty
+entries are ignored; duplicate models appear only once. The first model is the
+default for its provider; `DEFAULT_TRANSCRIBE_API` still selects the default provider.
+Restart the app and refresh the page after changing these settings.
+
+Each upload saves its selected model with the queued job and transcription history.
+Changing the dropdown or the configured list does not change already queued jobs.
+Files still process one at a time. Existing databases gain an optional model field
+automatically; older history retains its provider-only label. Jobs queued before
+this feature have no saved model and use the provider's default when processed.
+The context prompt follows the selected Gemini model and is hidden for
+`gemini-3.5-transcribe`.
+
 ### Gemini file transcription
 
-The default model is `gemini-3.5-transcribe`. Set `GEMINI_API_KEY` and restart the
-app. The client supports `google-genai` 1.41.0 and newer, including Vertex API-key
-connections. If `.env` or your deployment sets `GEMINI_MODEL_NAME`, update that
-value to `gemini-3.5-transcribe` too. The client reads the model from `Config`, so
-changing the default in `app/config.py` also works when no environment override is
-set. Docker deployments should rebuild the image.
+Set `GEMINI_API_KEY` and choose the model with `GEMINI_MODEL_NAME`, for example
+`gemini-pro-latest`. The app shows **Google Gemini (gemini-pro-latest)** using the
+configured model code. General-purpose models accept the optional context prompt along
+with the audio and language instructions. The client uses the same model setting
+for Gemini API and Vertex AI, including Vertex API-key connections.
 
-The client sends audio with transcription configuration and language hints,
-preserving the existing splitting and parallel processing. Free-form context prompts
-are unavailable for this model. See the [Gemini transcription documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-transcribe).
+The fallback model is `gemini-pro-latest` when no override is configured.
+The optional dedicated model `gemini-3.5-transcribe` receives audio and language hints only; the prompt field is
+hidden and any supplied context is ignored. See the [Gemini transcription documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-transcribe).
+The client supports `google-genai` 1.41.0 and newer. Restart the app after changing
+configuration; Docker deployments should rebuild the image after code changes.
+
+The app leaves thinking settings unset, using the model's default. Google documents
+**High** as the default and highest supported level for Gemini 3.1 Pro, and **Medium**
+as the default for Gemini 4 Argon (which also supports High). See Google's
+[thinking configuration documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/thinking).
+The `gemini-pro-latest` alias can change over time; its reasoning default follows
+the model it resolves to.
 
 ### Grok file transcription
 
@@ -121,6 +152,25 @@ This integration covers file uploads, including audio extracted from video.
 
 To make Grok the default, set `DEFAULT_TRANSCRIBE_API=grok`. With Docker Compose,
 also change the existing `DEFAULT_TRANSCRIBE_API=gpt4o` override in `docker-compose.yml`.
+
+### OpenRouter file transcription
+
+Set `OPENROUTER_API_KEY` in `.env` (or your VS Code launch environment), restart
+the app, and select **OpenRouter (elevenlabs/scribe-v2)**. The label follows
+your configured model. The default `OPENROUTER_MODEL_NAME` is
+`elevenlabs/scribe-v2`; change it to use another OpenRouter speech-to-text model.
+`OPENROUTER_MAX_CONCURRENCY` controls parallel chunks within a file (default: `4`).
+
+The client follows the Grok template, using OpenRouter's
+[`/api/v1/audio/transcriptions` endpoint](https://openrouter.ai/docs/guides/overview/multimodal/stt)
+with multipart uploads. It keeps the existing 25 MiB / 500-second splitting policy,
+retries, progress cards, and cleanup. Video audio extraction and the file queue also work.
+The standard context prompt is ignored by OpenRouter, so it is not offered for this provider.
+When the response omits its language, the selected language is used, or `unknown`
+for automatic detection. Silent chunks are allowed, but an entirely empty transcript fails.
+
+To make it the default, set `DEFAULT_TRANSCRIBE_API=openrouter`. With Docker Compose,
+also update the existing default-provider override in `docker-compose.yml`.
 
 ## Installation and Deployment
 
@@ -140,16 +190,18 @@ This is the fastest way to get started.
 
    ```bash
    docker run -d -p 5001:5001 \
-     -e TZ="Your/Timezone" \
-     -e ASSEMBLYAI_API_KEY="your_assemblyai_api_key" \
      -e OPENAI_API_KEY="your_openai_api_key" \
      -e GEMINI_API_KEY="your_gemini_api_key" \
+     -e OPENROUTER_API_KEY="your_openrouter_api_key" \
+     -e ASSEMBLYAI_API_KEY="your_assemblyai_api_key" \
      -e XAI_API_KEY="your_xai_api_key" \
-     -e DEFAULT_TRANSCRIBE_API="gpt4o" \
      -e OPENAI_MAX_CONCURRENCY=8 \
      -e GEMINI_MAX_CONCURRENCY=8 \
+     -e OPENROUTER_MAX_CONCURRENCY=8 \
      -e GROK_MAX_CONCURRENCY=8 \
+     -e DEFAULT_TRANSCRIBE_API="gpt4o" \
      -e DEFAULT_LANGUAGE="auto" \
+     -e TZ="Your/Timezone" \
      --name transcriber-app \
      ykharlamov/transcriber-app:latest
    ```
@@ -246,13 +298,15 @@ For further customization or local development, use Docker Compose.
    OPENAI_API_KEY=your_openai_api_key
    GEMINI_API_KEY=your_gemini_api_key
    XAI_API_KEY=your_xai_api_key
+   OPENROUTER_API_KEY=your_openrouter_api_key
+   OPENROUTER_MODEL_NAME=elevenlabs/scribe-v2
+   OPENROUTER_MAX_CONCURRENCY=4
    GEMINI_PROVIDER=google  # 'google' for Gemini API, or 'vertex' for Vertex AI
    VERTEXAI_PROJECT_ID=your_gcp_project_id
    VERTEXAI_LOCATION=us-central1
-   GEMINI_MODEL_NAME=gemini-3.5-transcribe
+   GEMINI_MODEL_NAME=gemini-pro-latest
    OPENAI_MAX_CONCURRENCY=8
    GEMINI_MAX_CONCURRENCY=8
-   GROK_MAX_CONCURRENCY=8
    DEFAULT_TRANSCRIBE_API=gpt4o
    TZ=Your/Timezone
    ```
@@ -302,11 +356,9 @@ You can store transcriptions database and uploads directory outside of the conta
      -e ASSEMBLYAI_API_KEY="your_assemblyai_api_key" \
      -e OPENAI_API_KEY="your_openai_api_key" \
      -e GEMINI_API_KEY="your_gemini_api_key" \
-     -e XAI_API_KEY="your_xai_api_key" \
      -e DEFAULT_TRANSCRIBE_API="gpt4o" \
      -e OPENAI_MAX_CONCURRENCY=8 \
      -e GEMINI_MAX_CONCURRENCY=8 \
-     -e GROK_MAX_CONCURRENCY=8 \
      -e DEFAULT_LANGUAGE="auto" \
      --name transcriber-app \
      ykharlamov/transcriber-app:latest
@@ -317,6 +369,11 @@ You can store transcriptions database and uploads directory outside of the conta
 
 ## Advanced installations. Special notes.
 
+
+## What transcription model is the best
+Virtually all major vendors claim their models perform best in tests. However, reality often differs significantly from test conditions. Factors such as recording environments, audio quality, and the languages ​​involved—especially when multiple languages ​​are mixed—mean that comparative benchmarks should serve only as a starting point for evaluation. If transcription quality is a critical factor, it is advisable to select a few models that perform well in tests and then evaluate them using your own specific audio files.  [Artificial Analysis Speech to Text AI Model & Provider Leaderboard](https://artificialanalysis.ai/speech-to-text/non-streaming)
+
+![Screenshot of the list of models (can be expanded with OpenRouter and Google)](TTranscriber-models-screenshots-20261108.png)
 
 ## License
 

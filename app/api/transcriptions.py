@@ -32,6 +32,20 @@ def transcribe_audio():
         logging.error(f"[API] File type not allowed: {file.filename}")
         return jsonify({'error': 'File type not allowed'}), 400
 
+    language_code = request.form.get('language_code', Config.DEFAULT_LANGUAGE)
+    api_choice = request.form.get('api_choice', Config.DEFAULT_API)
+    context_prompt = request.form.get('context_prompt', '')
+    model_name = request.form.get('model_name', '').strip() or None
+    if api_choice not in ('gpt4o', 'whisper', 'assemblyai', 'grok', 'gemini', 'openrouter'):
+        return jsonify({'error': 'Invalid transcription provider.'}), 400
+    if api_choice in ('gemini', 'openrouter'):
+        models = current_app.config[f'{api_choice.upper()}_MODELS']
+        model_name = model_name or models[0]
+        if model_name not in models:
+            return jsonify({'error': 'Selected model is not configured for this provider. Refresh the page and try again.'}), 400
+    elif model_name:
+        return jsonify({'error': 'Model selection is only available for Gemini and OpenRouter.'}), 400
+
     original_filename = secure_filename(file.filename)
     job_id = str(uuid.uuid4()) # Generate unique ID for this job
     short_job_id = job_id[:8] # For logging
@@ -50,11 +64,6 @@ def transcribe_audio():
         logging.exception(f"[API:JOB:{short_job_id}] Failed to save uploaded file {os.path.basename(temp_filename)}: {e}")
         return jsonify({'error': 'Failed to save uploaded file.'}), 500
 
-    # Get parameters from form
-    language_code = request.form.get('language_code', Config.DEFAULT_LANGUAGE)
-    api_choice = request.form.get('api_choice', Config.DEFAULT_API)
-    context_prompt = request.form.get('context_prompt', '')
-
     try:
         # Commit the job and queue entry together so startup recovery cannot
         # mistake an upload being submitted by another worker for an orphan.
@@ -65,11 +74,12 @@ def transcribe_audio():
                 job_id=job_id,
                 filename=original_filename,
                 api_used=api_choice,
+                model_name=model_name,
                 connection=db,
             )
             transcription_model.update_job_progress(job_id, 'Uploaded. Queued for transcription.', connection=db)
             queue.enqueue(
-                job_id, temp_filename, language_code, api_choice, original_filename, context_prompt,
+                job_id, temp_filename, language_code, api_choice, original_filename, context_prompt, model_name,
                 connection=db,
             )
         logging.info(f"[JOB:{short_job_id}] Added to transcription queue.")
@@ -137,6 +147,7 @@ def get_progress(job_id):
                 'detected_language': job_data['detected_language'],
                 'transcription_text': job_data['transcription_text'],
                 'api_used': job_data['api_used'],
+                'model_name': job_data['model_name'],
                 'created_at': job_data['created_at'],
                 'status': job_data['status']
             }

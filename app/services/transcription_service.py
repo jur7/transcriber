@@ -18,6 +18,7 @@ from app.services.api_clients.openai_whisper import OpenAITranscriptionAPI
 from app.services.api_clients.openai_gpt4o import OpenAIGPT4oTranscriptionAPI
 from app.services.api_clients.gemini import GeminiTranscriptionAPI
 from app.services.api_clients.grok import GrokTranscriptionAPI
+from app.services.api_clients.openrouter import OpenRouterTranscriptionAPI
 
 # Import specific API errors if available (example for OpenAI)
 from openai import OpenAIError
@@ -45,7 +46,7 @@ def _update_progress(job_id: str, message: str, is_error: bool = False) -> None:
 
 # --- API Client Factory ---
 
-def get_transcription_api(api_choice: str) -> Any:
+def get_transcription_api(api_choice: str, model_name: Optional[str] = None) -> Any:
     """Factory function to get an instance of the chosen transcription API client."""
     # This function now runs within the app context provided by process_transcription
     # API client __init__ methods will log their own initialization.
@@ -70,12 +71,17 @@ def get_transcription_api(api_choice: str) -> Any:
             if not api_key:
                 raise ValueError("xAI API key is not configured.")
             return GrokTranscriptionAPI(api_key)
+        elif api_choice == 'openrouter':
+            api_key = current_app.config.get('OPENROUTER_API_KEY')
+            if not api_key:
+                raise ValueError("OpenRouter API key is not configured.")
+            return OpenRouterTranscriptionAPI(api_key, model_name=model_name or current_app.config['OPENROUTER_MODEL_NAME'])
         elif api_choice == 'gemini':
             # For Google AI provider, GEMINI_API_KEY is required; for Vertex, project/location are required.
             # The client reads the rest of config internally.
             api_key = current_app.config.get('GEMINI_API_KEY')
             # api_key may be None for Vertex provider
-            return GeminiTranscriptionAPI(api_key)
+            return GeminiTranscriptionAPI(api_key, model_name=model_name or current_app.config['GEMINI_MODEL_NAME'])
         else:
             message = f"Invalid API choice specified: {api_choice}"
             logging.error(f"[SYSTEM] {message}") # Log as system error if choice is invalid
@@ -88,7 +94,8 @@ def get_transcription_api(api_choice: str) -> Any:
 # --- Main Background Transcription Process ---
 
 def process_transcription(job_id: str, temp_filename: str, language_code: str,
-                          api_choice: str, original_filename: str, context_prompt: str = "") -> None:
+                          api_choice: str, original_filename: str, context_prompt: str = "",
+                          model_name: Optional[str] = None) -> None:
     """
     Handles audio/video transcription in the background, updating status in the database.
     For video files, extracts audio first, then processes through transcription pipeline.
@@ -135,7 +142,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
                 # if api_choice == 'assemblyai': limit = ASSEMBLYAI_LIMIT
 
                 # Only log splitting if size exceeds limit AND API requires splitting
-                if file_size > limit and api_choice in ('whisper', 'gpt4o', 'gemini', 'grok'):
+                if file_size > limit and api_choice in ('whisper', 'gpt4o', 'gemini', 'grok', 'openrouter'):
                      # SIMPLE UI MESSAGE
                      _update_progress(job_id, f"Splitting large file: {original_filename}...")
             except OSError as e:
@@ -144,7 +151,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
 
 
             # Get API client instance
-            api = get_transcription_api(api_choice) # Logs initialization internally to console
+            api = get_transcription_api(api_choice, model_name) # Use the model saved with this job.
 
             # Define the progress callback to use our helper
             # This lambda ensures all messages from the API client are logged via _update_progress
@@ -155,7 +162,7 @@ def process_transcription(job_id: str, temp_filename: str, language_code: str,
             # Pass original_filename TO API CLIENTS for their internal logging/progress
             # SIMPLE UI MESSAGE (added before calling transcribe)
             _update_progress(job_id, f"Starting transcription of file: {original_filename}")
-            if api_choice in ('gpt4o', 'whisper', 'gemini', 'grok'):
+            if api_choice in ('gpt4o', 'whisper', 'gemini', 'grok', 'openrouter'):
                 transcription_text, detected_language = api.transcribe(
                     audio_file_path=audio_file_path,
                     language_code=language_code,

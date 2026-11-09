@@ -10,24 +10,26 @@ document.addEventListener('DOMContentLoaded', function() {
   // Load existing transcriptions on page load
   loadTranscriptions();
 
-  // Map API codes to display names
-  var apiNameMap = {
-    'gpt4o': 'OpenAI GPT Transcribe',
-    'grok': 'Grok Voice Transcribe 2.0',
-    'assemblyai': 'AssemblyAI',
-    'whisper': 'OpenAI Whisper',
-    'gemini': 'Gemini 3.5 Transcribe'
-  };
-
   // Handle API selection change to show/hide context prompt
   var apiSelect = document.getElementById('apiSelect');
   var contextPromptContainer = document.getElementById('contextPromptContainer');
+  function supportsContextPrompt(option) {
+      const apiChoice = option.dataset.provider || option.value;
+      return apiChoice === 'gpt4o' || apiChoice === 'whisper' ||
+          (apiChoice === 'gemini' && option.dataset.supportsContext === 'true');
+  }
   apiSelect.addEventListener('change', function() {
-      if (this.value === 'gpt4o' || this.value === 'whisper') {
+      const option = this.selectedOptions[0];
+      if (supportsContextPrompt(option)) {
           contextPromptContainer.style.display = 'block';
       } else {
           contextPromptContainer.style.display = 'none';
       }
+      const description = document.getElementById('geminiModelDescription');
+      description.style.display = option.dataset.provider === 'gemini' ? 'block' : 'none';
+      description.textContent = option.dataset.supportsContext === 'true'
+          ? 'Audio transcription with optional context for names and specialized terms.'
+          : 'Dedicated audio transcription; context prompts are ignored.';
   });
   // Trigger change event on load to set initial state
   apiSelect.dispatchEvent(new Event('change'));
@@ -40,7 +42,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const fileInput = document.getElementById('audioFile');
     const files = Array.from(fileInput.files);
     const languageCode = document.getElementById('languageSelect').value;
-    const apiChoice = document.getElementById('apiSelect').value;
+    const selectedOption = apiSelect.selectedOptions[0];
+    const apiChoice = selectedOption.dataset.provider || selectedOption.value;
+    const modelName = selectedOption.dataset.model || '';
     if (!files.length) {
       M.toast({html: 'Please select audio or video files.', classes: 'red'});
       return;
@@ -49,15 +53,15 @@ document.addEventListener('DOMContentLoaded', function() {
       M.toast({html: 'Only supported audio or video files are allowed.', classes: 'red'});
       return;
     }
-    const contextPrompt = (apiChoice === 'gpt4o' || apiChoice === 'whisper')
+    const contextPrompt = supportsContextPrompt(selectedOption)
       ? document.getElementById('contextPrompt').value : '';
     if ((contextPrompt.match(/\S+/g) || []).length > 120) {
       M.toast({html: 'Context prompt exceeds 120 word limit.', classes: 'red'});
       return;
     }
     queueFilesForUpload(files, {
-      apiChoice, languageCode, contextPrompt,
-      serviceName: apiNameMap[apiChoice] || apiChoice,
+      apiChoice, modelName, languageCode, contextPrompt,
+      serviceName: selectedOption.textContent,
       languageDisplay: (typeof SUPPORTED_LANGUAGE_MAP !== 'undefined' && SUPPORTED_LANGUAGE_MAP[languageCode]) || languageCode,
     });
     fileInput.value = '';
@@ -148,8 +152,7 @@ function loadTranscriptions() {
         if (transcription.status === 'finished' || transcription.status === 'error' || !transcription.status) { // Handle old items without status
              addTranscriptionToHistory(transcription, false); // Append items during initial load
         } else if (!activeJobCards.has(transcription.id)) {
-             const option = Array.from(document.getElementById('apiSelect').options).find(item => item.value === transcription.api_used);
-             const ui = addProgressCard(transcription.filename, option ? option.textContent : transcription.api_used, transcription.detected_language || 'Not reported yet');
+             const ui = addProgressCard(transcription.filename, transcriptionServiceName(transcription), transcription.detected_language || 'Not reported yet');
              pollProgressForCard(transcription.id, ui);
         }
       });
@@ -166,10 +169,21 @@ function loadTranscriptions() {
   });
 }
 
+// Use the saved model, including models no longer present in the dropdown.
+function transcriptionServiceName(transcription) {
+  const names = {
+    gpt4o: 'OpenAI GPT Transcribe', grok: 'Grok Voice Transcribe 2.0',
+    openrouter: 'OpenRouter', gemini: 'Google Gemini',
+    assemblyai: 'AssemblyAI', whisper: 'OpenAI Whisper'
+  };
+  const name = names[transcription.api_used] || transcription.api_used;
+  return transcription.model_name ? `${name} (${transcription.model_name})` : name;
+}
+
 /**
  * Adds a single transcription item to the history list UI.
  * @param {object} transcription - The transcription data object.
- * @param {boolean} [prepend=true] - Whether to add the item to the beginning (true) or end (false) of the list.
+ * @param {boolean} [prepend=true] - Whether to prepend or append the item.
  */
 function addTranscriptionToHistory(transcription, prepend = true) {
   // Skip adding if it's still processing (should only happen if called directly, loadTranscriptions filters)
@@ -205,14 +219,7 @@ function addTranscriptionToHistory(transcription, prepend = true) {
   // --- END Date/Time Formatting ---
 
 
-  const apiNameMap = {
-      'gpt4o': 'OpenAI GPT Transcribe',
-      'grok': 'Grok Voice Transcribe 2.0',
-      'gemini': 'Gemini 3.5 Transcribe',
-      'assemblyai': 'AssemblyAI',
-      'whisper': 'OpenAI Whisper'
-  };
-  const apiName = apiNameMap[transcription.api_used] || transcription.api_used;
+  const apiName = transcriptionServiceName(transcription);
 
   // Look up full language name and capitalize
   const detectedLangCode = transcription.detected_language || 'N/A';
@@ -255,7 +262,7 @@ function addTranscriptionToHistory(transcription, prepend = true) {
 
           <b>${transcription.filename || 'Unknown Filename'}</b>
           <p class="meta grey-text text-darken-1">
-              ${apiName} | ${languageName} | ${formattedDateTime}
+              ${escapeHtml(apiName)} | ${languageName} | ${formattedDateTime}
               ${transcription.status === 'error' ? '<span class="red-text"> (Failed)</span>' : ''}
           </p>
           <p class="transcription-text grey-text text-darken-3"></p>

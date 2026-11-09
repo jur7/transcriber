@@ -45,12 +45,18 @@
                 <select id="apiSelect">
                   <!-- Reordered Options: AssemblyAI is now last -->
                   <option value="gpt4o">OpenAI GPT Transcribe</option>
-                  <option value="gemini">Gemini 3.5 Transcribe</option>
+                  {% for model in gemini_models %}
+                  <option value="gemini:{{ model }}" data-provider="gemini" data-model="{{ model }}" data-supports-context="{{ 'false' if model == 'gemini-3.5-transcribe' else 'true' }}">Google Gemini ({{ model }})</option>
+                  {% endfor %}
                   <option value="grok">Grok Voice Transcribe 2.0</option>
+                  {% for model in openrouter_models %}
+                  <option value="openrouter:{{ model }}" data-provider="openrouter" data-model="{{ model }}">OpenRouter ({{ model }})</option>
+                  {% endfor %}
                   <option value="whisper">OpenAI Whisper</option>
                   <option value="assemblyai">AssemblyAI</option>
                 </select>
                 <label>Transcription API</label>
+                <span id="geminiModelDescription" class="helper-text" style="display: none;"></span>
               </div>
               <div class="input-field">
                 <select id="languageSelect">
@@ -61,7 +67,7 @@
                 <label>Language</label>
               </div>
 
-              <!-- Context Prompt Input (only for OpenAI APIs) -->
+              <!-- Context Prompt Input (OpenAI and general-purpose Gemini models) -->
               <div id="contextPromptContainer" class="input-field" style="display: none;">
                 <label for="contextPrompt">Context prompt</label>
                 <textarea id="contextPrompt" class="materialize-textarea" placeholder="(Optional) Enter context prompt..." oninput="validateContextPrompt()"></textarea>
@@ -108,10 +114,10 @@
           // Initialize API Select and set default
           if (apiSelectElem) {
               // Set the value *before* initializing Materialize select
-              var hasDefaultApi = Array.from(apiSelectElem.options).some(function(option) {
-                  return option.value === defaultApi;
+              var defaultOption = Array.from(apiSelectElem.options).find(function(option) {
+                  return (option.dataset.provider || option.value) === defaultApi;
               });
-              apiSelectElem.value = hasDefaultApi ? defaultApi : 'gpt4o';
+              apiSelectElem.value = defaultOption ? defaultOption.value : 'gpt4o';
               M.FormSelect.init(apiSelectElem);
               // Trigger change event *after* initialization to ensure UI updates (like context prompt visibility)
               apiSelectElem.dispatchEvent(new Event('change'));

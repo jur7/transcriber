@@ -94,6 +94,11 @@ def init_db_command():
                     cursor = conn.cursor()
                     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='transcriptions'")
                     if cursor.fetchone():
+                        # Run independently of release version, under the startup file lock.
+                        columns = {row[1] for row in conn.execute('PRAGMA table_info(transcriptions)')}
+                        if 'model_name' not in columns:
+                            conn.execute('ALTER TABLE transcriptions ADD COLUMN model_name TEXT')
+                            conn.commit()
                         init_needed = False
                         logging.info("[DB] Database already initialized; skipping schema initialization.")
                     conn.close()
@@ -228,6 +233,7 @@ def init_db_command():
                     detected_language TEXT,
                     transcription_text TEXT,
                     api_used TEXT,
+                    model_name TEXT,
                     created_at TEXT NOT NULL,
                     status TEXT DEFAULT 'pending',
                     progress_log TEXT DEFAULT '[]',
@@ -277,18 +283,18 @@ def init_db_command():
 
 # --- CRUD and Job Status Operations ---
 
-def create_transcription_job(job_id: str, filename: str, api_used: str, *, connection=None) -> None:
+def create_transcription_job(job_id: str, filename: str, api_used: str, *, model_name=None, connection=None) -> None:
     """Creates an initial record for a transcription job."""
     short_job_id = job_id[:8]
     sql = '''
-        INSERT INTO transcriptions (id, filename, api_used, created_at, status, progress_log, error_message)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO transcriptions (id, filename, api_used, created_at, status, progress_log, error_message, model_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         '''
     now_utc_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
     initial_log = json.dumps(["Job created."])
     try:
         db = connection if connection is not None else get_db()
-        db.execute(sql, (job_id, filename, api_used, now_utc_iso, 'pending', initial_log, None))
+        db.execute(sql, (job_id, filename, api_used, now_utc_iso, 'pending', initial_log, None, model_name))
         if connection is None:
             db.commit()
         logging.info(f"[DB:JOB:{short_job_id}] Created initial job record.")

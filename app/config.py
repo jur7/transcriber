@@ -5,10 +5,17 @@ from dotenv import load_dotenv
 # Load environment variables from a .env file if present at the project root
 load_dotenv()
 
+def _model_list(setting, default):
+    models = [model.strip() for model in os.environ.get(setting, default).split(',') if model.strip()]
+    return list(dict.fromkeys(models)) or [default]
+
 class Config:
     ASSEMBLYAI_API_KEY = os.environ.get('ASSEMBLYAI_API_KEY')
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
     XAI_API_KEY = os.environ.get('XAI_API_KEY')
+    OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
+    OPENROUTER_MODELS = _model_list('OPENROUTER_MODEL_NAME', 'elevenlabs/scribe-v2')
+    OPENROUTER_MODEL_NAME = OPENROUTER_MODELS[0]
     DEFAULT_API = os.environ.get('DEFAULT_TRANSCRIBE_API', 'gpt4o')
     # Gemini / Vertex settings
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
@@ -16,7 +23,8 @@ class Config:
     GEMINI_PROVIDER = os.environ.get('GEMINI_PROVIDER', 'google')
     VERTEXAI_PROJECT_ID = os.environ.get('VERTEXAI_PROJECT_ID')
     VERTEXAI_LOCATION = os.environ.get('VERTEXAI_LOCATION')
-    GEMINI_MODEL_NAME = os.environ.get('GEMINI_MODEL_NAME', 'gemini-3.5-transcribe')
+    GEMINI_MODELS = _model_list('GEMINI_MODEL_NAME', 'gemini-pro-latest')
+    GEMINI_MODEL_NAME = GEMINI_MODELS[0]
     # Default language for transcription (e.g. 'en' or 'auto' for auto-detect)  
     DEFAULT_LANGUAGE = os.environ.get('DEFAULT_LANGUAGE', 'auto')
     # Supported language codes (comma‐separated in the env or defaults to en,nl,fr,es)
@@ -41,6 +49,7 @@ class Config:
     # Max concurrency for Gemini (defaults to same as OpenAI if not set)
     GEMINI_MAX_CONCURRENCY = int(os.environ.get('GEMINI_MAX_CONCURRENCY', '4'))
     GROK_MAX_CONCURRENCY = int(os.environ.get('GROK_MAX_CONCURRENCY', '4'))
+    OPENROUTER_MAX_CONCURRENCY = int(os.environ.get('OPENROUTER_MAX_CONCURRENCY', '4'))
     # Prefer HTTPS when generating external URLs
 
 #    PREFERRED_URL_SCHEME = 'https'

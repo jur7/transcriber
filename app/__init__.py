@@ -70,6 +70,8 @@ def index():
         'index.html',
         default_api=app.config.get('DEFAULT_API'),
         default_language=app.config.get('DEFAULT_LANGUAGE'),
+        gemini_models=app.config['GEMINI_MODELS'],
+        openrouter_models=app.config['OPENROUTER_MODELS'],
         supported_languages=app.config.get('SUPPORTED_LANGUAGE_NAMES'),
     )
 
