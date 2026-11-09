@@ -11,6 +11,9 @@ This fork of the [arnoulddw/transcriber](https://github.com/arnoulddw/transcribe
 - **Grok API option** Can be a good option for noisy recordings.
 - **Configuration support reverse proxy** Can be installed as a personal transcription service on your personal domain behind the nginx with https and a secret access link.
 
+&#128308; **November 9, 2026** — This version of the app was tested with the following models: [OpenAI Transcribe](https://developers.openai.com/api/docs/models/gpt-transcribe), [Gemini 3.8 Flash](https://aistudio.google.com/docs/models/gemini-3.8-flash), [Gemini 3.5 Transcribe](https://aistudio.google.com/docs/models/gemini-3.5-transcribe), [Gemini 3.1 Pro](https://aistudio.google.com/docs/models/gemini-3.1-pro-preview), [Gemini 4 Argon](https://aistudio.google.com/docs/models/gemini-4-argon), [Gemini 2.5 Pro](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro), [ElevenLabs Scribe 2.0](https://elevenlabs.io/docs/overview/capabilities/speech-to-text), [MAI-Transcribe 2](https://microsoft.ai/models/mai-transcribe-2/), [Voxtral Small Transcribe 3](https://mistral.ai/news/voxtral-3/), [Voxtral Mini Transcribe 3](https://mistral.ai/news/voxtral-3/), [AssemblyAI: Universal-3.6 Pro](https://openrouter.ai/assemblyai/universal-3-6-pro), and [Grok Transcribe 2.0](https://x.ai/news/grok-voice-transcribe-2).
+
+
 | Source                 | Format | Size  | API       | Original transcriber   | Parallel processing (x10max) | Difference |
 | ---------------------- | ------ | ----- | --------- | ---------------------- | ---------------------------- | ---------- |
 | 02:05:06 meeting       |  m4a   | 61 MB | OpenAI 4o |     08 min 22 sec      |       01 min 25 sec          |    x5.9    |
